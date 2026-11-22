@@ -360,7 +360,10 @@ class Snapshot:
 
     @staticmethod
     def _in_scope(scope: dict, bucket: str, stream: str | None) -> bool:
-        if scope.get("stream") and scope["stream"] != stream:
+        # A rule learned on a labelled stream also applies to unlabelled lines of the same
+        # content bucket (a mixed topic with no source header); it never crosses to a
+        # stream that carries a different label.
+        if scope.get("stream") and stream is not None and scope["stream"] != stream:
             return False
         b = scope.get("bucket", "*")
         return b == "*" or rx.compile(b).search(bucket) is not None

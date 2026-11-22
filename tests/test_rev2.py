@@ -160,3 +160,16 @@ def test_wrapped_and_embedded_formats(tmp_path):
     from logparser import formats
     f = formats.kv_pairs(d.payload, eng.snap.dialects["kv_js"])[0]
     assert f["siteName"] == "King's Cross 45" and f["description"] == "Forced Open"
+
+
+def test_label_scoped_mask_applies_to_an_unlabelled_stream_but_not_another_label(tmp_path):
+    from logparser import registry
+    eng = make(tmp_path)
+    registry.save_rule(eng.store, "mask:jobs", {"scope": {"bucket": "^x$", "stream": "jobs"}, "priority": 10,
+                                                "patterns": [{"name": "j", "pattern": "J\\w+", "placeholder": "<JOB>"}]})
+    eng.reload()
+    names = lambda stream: [p[0] for p in eng.snap.mask_patterns("x", stream)]
+    assert "j" in names("jobs")          # the stream it was learned on
+    assert "j" in names(None)            # a mixed topic with no source label
+    assert "j" not in names("other")     # never another labelled source
+    assert "j" not in names.__call__("jobs") or "j" not in [p[0] for p in eng.snap.mask_patterns("y", "jobs")]
