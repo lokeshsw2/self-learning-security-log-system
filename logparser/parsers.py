@@ -30,10 +30,10 @@ def run(snap: Snapshot, body: dict, det: Detection, base: dict | None = None) ->
     kind = body["kind"]
     text = det.payload
     if kind == "regex":
-        m = rx.compile(body["pattern"]).search(text)
-        if not m:
+        gd = rx.search_dict(body["pattern"], text)
+        if gd is None:
             raise ParseError("pattern did not match")
-        fields = {k: v for k, v in m.groupdict().items() if v is not None and v != ""}
+        fields = {k: v for k, v in gd.items() if v is not None and v != ""}
     elif kind == "json":
         fields = formats.flatten(formats.parse_json(text))
     elif kind == "kv":

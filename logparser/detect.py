@@ -48,11 +48,11 @@ def _test(test: dict, text: str, snap: Snapshot):
         s = text.lstrip()
         return (len(s) > 2 and s[0] == "<" and (s[1].isalpha() or s[1] in "?!") and s.rstrip().endswith(">")), None, None
     if kind == "regex":
-        m = rx.compile(test["pattern"]).search(text)
-        if not m:
+        gd = rx.search_dict(test["pattern"], text)
+        if gd is None:
             return False, None, None
         # "-" is the syslog NILVALUE: treat it as absent
-        return True, {k: v for k, v in m.groupdict().items()
+        return True, {k: v for k, v in gd.items()
                       if v is not None and (v != "-" or k == "payload")}, None
     if kind == "json_wrap":
         # a small JSON object whose one field holds the real log line (an agent or forwarder wrapper)

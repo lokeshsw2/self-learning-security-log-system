@@ -32,6 +32,12 @@ def mask(text: str, patterns: list, protected=frozenset()) -> tuple[str, list]:
     """Apply ordered mask patterns. Later patterns never see masked spans.
     A match that is a protected word (failed, denied, accepted, ...) is left as
     fixed text, so different outcomes never share a signature."""
+    if text.isascii():
+        return _mask_ascii(text, patterns, protected)
+    return _mask_str(text, patterns, protected)
+
+
+def _mask_str(text: str, patterns: list, protected=frozenset()) -> tuple[str, list]:
     segs: list = [(text, None)]            # (text, placeholder or None)
     for _name, pat, placeholder, group in patterns:
         nxt: list = []
@@ -62,6 +68,44 @@ def mask(text: str, patterns: list, protected=frozenset()) -> tuple[str, list]:
         else:
             out.append(ph)
             variables.append((ph, seg))
+    return "".join(out), variables
+
+
+_EDGE_B = _EDGE.encode()
+
+
+def _mask_ascii(text: str, patterns: list, protected) -> tuple[str, list]:
+    """mask() for ASCII text, run on bytes. Same patterns, same order, same results."""
+    from . import rx
+    segs: list = [(text.encode("ascii"), None)]
+    for _name, pat, placeholder, group in patterns:
+        bpat = rx.compile_b(pat.pattern if isinstance(pat.pattern, str) else pat.pattern.decode())
+        nxt: list = []
+        for seg, ph in segs:
+            if ph is not None or not seg:
+                nxt.append((seg, ph))
+                continue
+            pos = 0
+            for m in bpat.finditer(seg):
+                s, e = m.span(group)
+                if s < 0 or e <= s or s < pos:
+                    continue
+                if protected and seg[s:e].strip(_EDGE_B).lower().decode() in protected:
+                    continue
+                if s > pos:
+                    nxt.append((seg[pos:s], None))
+                nxt.append((seg[s:e], placeholder))
+                pos = e
+            if pos < len(seg):
+                nxt.append((seg[pos:], None))
+        segs = nxt
+    out, variables = [], []
+    for seg, ph in segs:
+        if ph is None:
+            out.append(seg.decode("ascii"))
+        else:
+            out.append(ph)
+            variables.append((ph, seg.decode("ascii")))
     return "".join(out), variables
 
 

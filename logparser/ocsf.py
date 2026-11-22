@@ -35,6 +35,7 @@ class Schema:
             self.classes.setdefault(c["name"], c)
             self.classes.setdefault(n.split("/")[-1], c)
         self._rx_cache: dict = {}
+        self._attr_cache: dict = {}
 
     # ------------------------------------------------------------ lookup
     def cls(self, name_or_uid) -> dict | None:
@@ -50,7 +51,13 @@ class Schema:
         return t
 
     def attr_at(self, class_name: str, path: str) -> dict | None:
-        """Attribute definition for a dotted path inside a class, or None."""
+        """Attribute definition for a dotted path inside a class, or None (cached)."""
+        key = (class_name, path)
+        if key not in self._attr_cache:
+            self._attr_cache[key] = self._attr_at(class_name, path)
+        return self._attr_cache[key]
+
+    def _attr_at(self, class_name: str, path: str) -> dict | None:
         attrs = self.classes[class_name]["attributes"]
         parts = path.split(".")
         for i, part in enumerate(parts):
