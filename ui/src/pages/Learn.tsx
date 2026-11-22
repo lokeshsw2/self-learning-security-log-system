@@ -15,6 +15,7 @@ import { ErrorNote, Mono, useLoad } from "@/components/common"
 import { api, ago, fmt, type Json, type LearnRun, type Role } from "@/lib/api"
 
 const AGENTS: { role: Role; label: string; note: string }[] = [
+  { role: "detection", label: "Read new headers", note: "detection rules for unread lines" },
   { role: "source-naming", label: "Name sources", note: "vendor and product from content" },
   { role: "grouping-repair", label: "Fix grouping", note: "merge, split or remask groups" },
   { role: "parser-gen", label: "Write parsers", note: "field extraction per group" },
@@ -113,7 +114,7 @@ export function LearnPanel({ onChange }: { onChange?: () => void }) {
           </Alert>
         )}
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
           {AGENTS.map((a) => (
             <label
               key={a.role}

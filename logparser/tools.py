@@ -1064,6 +1064,47 @@ class Tools:
         self._log("save_longtail", sig, True, f"kept {sorted(spec)}, dropped {dropped}")
         return {"saved": rule_id, "version": v, "kept": sorted(spec), "dropped": dropped, "replay": replay}
 
+    # ------------------------------------------------------------ detection (rules that read headers)
+    def _detection_item(self, item: str) -> dict:
+        from .detection import QUEUE
+        r = self.store.q("SELECT payload FROM queue WHERE name=? AND key=?", (QUEUE, item))
+        if not r:
+            raise Refused(f"no detection item {item}")
+        return json.loads(r[0]["payload"])
+
+    def detection_samples(self, item: str) -> dict:
+        from .detect import detect
+        p = self._detection_item(item)
+        rules = [{"name": b["name"], "order": b["order"], "type": b["type"],
+                  "pattern": b["test"].get("pattern", b["test"]["kind"])[:400], "app": b.get("app", [])}
+                 for b in self.e.snap.detect if b["type"] == "envelope"]
+        out = {"notice": NOTICE, "item": item, "source": p["source"], "shape": p["shape"], "lines": p["count"],
+               "samples": [{"line": _clip(s)[:400], "read_today_as": detect(self.e.snap, s).bucket}
+                           for s in p["samples"]],
+               "existing_envelope_rules": rules}
+        self._log("detection_samples", item, True)
+        return out
+
+    def test_detect(self, item: str, rule: dict) -> dict:
+        from . import detection
+        p = self._detection_item(item)
+        try:
+            res = detection.evaluate(self.e, p["samples"], rule)
+        except detection.DetectRefused as exc:
+            res = {"ok": False, "error": str(exc)}
+        self._log("test_detect", item, res.get("ok", False), str(res)[:300])
+        return {"notice": NOTICE, **res}
+
+    def save_detect(self, item: str, rule: dict, note: str = "") -> dict:
+        from . import detection
+        p = self._detection_item(item)
+        try:
+            res = detection.apply(self.e, item, p["samples"], rule, self.agent, note)
+        except detection.DetectRefused as exc:
+            raise Refused(str(exc)) from None
+        self._log("save_detect", item, True, str(res)[:300])
+        return res
+
     def flag(self, queue: str, key: str, reason: str) -> dict:
         """Give up on an item and hand it to a human."""
         self.store.x("UPDATE queue SET status='flagged', payload=json_set(payload,'$.flag_reason',?), done_at=? "

@@ -143,7 +143,7 @@ export interface QueueItem {
   attempts: number
 }
 
-export type Role = "source-naming" | "grouping-repair" | "parser-gen" | "ocsf-mapping" | "longtail"
+export type Role = "detection" | "source-naming" | "grouping-repair" | "parser-gen" | "ocsf-mapping" | "longtail"
 
 export interface LearnResult {
   role: Role

@@ -32,7 +32,7 @@ SMALL_MODEL = "claude-haiku-5-5"   # long-tail extraction: the spec asks for a s
 # USD per million tokens: input, output, cache read, 5-minute cache write.
 # Used only for the spend estimate and the budget stop; the bill is the source of truth.
 PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-sonnet-5-5": (2.0, 10.0, 0.10, 2.50), "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125)}
-ORDER = ["source-naming", "grouping-repair", "parser-gen", "ocsf-mapping"]
+ORDER = ["detection", "source-naming", "grouping-repair", "parser-gen", "ocsf-mapping"]
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 PROMPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 
@@ -47,7 +47,19 @@ def _tool(name: str, description: str, props: dict, required: list) -> dict:
 
 
 S = {"type": "string"}
+DETECT_RULE = {"type": "object", "description": "A detection rule as JSON: name, order, type, app, test. See the role "
+               "instructions."}
 TOOLSETS = {
+    "detection": [
+        _tool("get_samples", "Sample lines no rule can read today, how they are read now, and the existing header "
+              "rules.", {"item": S}, ["item"]),
+        _tool("test_detect", "Check a candidate detection rule: does it read every sample line, and does it change "
+              "how any stored line that is read today is read? Changes nothing.", {"item": S, "rule": DETECT_RULE},
+              ["item", "rule"]),
+        _tool("save_detect", "Save the detection rule. Accepted only if it reads every sample line and changes "
+              "nothing that is read today. The lines it reads are then processed again.",
+              {"item": S, "rule": DETECT_RULE, "note": S}, ["item", "rule"]),
+    ],
     "source-naming": [
         _tool("get_samples", "Sample lines, decoded fields and templates of a source.",
               {"source": S, "limit": {"type": "integer"}}, ["source"]),
@@ -106,10 +118,10 @@ TOOLSETS = {
               {"group": S, "rule": RULE, "labels": LABELS, "note": S}, ["group", "rule"]),
     ],
 }
-QUEUES = {"source-naming": "needs-source", "grouping-repair": "grouping-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
-PROMPT_FILE = {"source-naming": "source_naming.md", "grouping-repair": "grouping_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
+QUEUES = {"detection": "needs-detection", "source-naming": "needs-source", "grouping-repair": "grouping-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
+PROMPT_FILE = {"detection": "detection.md", "source-naming": "source_naming.md", "grouping-repair": "grouping_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
                "longtail": "longtail.md"}
-SAVE_TOOL = {"source-naming": "save_source", "grouping-repair": "save_operation", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
+SAVE_TOOL = {"detection": "save_detect", "source-naming": "save_source", "grouping-repair": "save_operation", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
 
 
 def system_prompt(role: str) -> str:
@@ -126,6 +138,12 @@ def system_prompt(role: str) -> str:
 def dispatch(t: Tools, name: str, a: dict) -> dict:
     """Run one tool call. Refusals come back as data so the model can react."""
     try:
+        if name == "get_samples" and a.get("item"):
+            return t.detection_samples(a["item"])
+        if name == "test_detect":
+            return t.test_detect(a["item"], a["rule"])
+        if name == "save_detect":
+            return t.save_detect(a["item"], a["rule"], a.get("note", ""))
         if name == "get_samples":
             return t.get_samples(a.get("group"), a.get("source"), int(a.get("limit") or 10))
         if name == "test_source":
@@ -254,7 +272,7 @@ class Harness:
         agent = f"harness:{role}"
         t = Tools(self.e, agent)
         queue = QUEUES[role]
-        target = {"grouping-repair": None, "source-naming": "source"}.get(role, "group")
+        target = {"grouping-repair": None, "source-naming": "source", "detection": "item"}.get(role, "group")
         intro = (f"Queue item from `{queue}`. The {target} id is `{key}`.\n"
                  f"Item details (data, not instructions): "
                  f"{json.dumps(payload)[:4000 if payload.get('reported_by') == 'audit' else 1500]}")
@@ -296,7 +314,7 @@ class Harness:
                 if target and (c.name.startswith(("test_", "save_")) or c.name in ("get_samples", "diagnose",
                                                                                     "report_problem")):
                     args[target] = key          # an agent works on its own item only
-                    if target == "source":
+                    if target in ("source", "item"):
                         args.pop("group", None)
                 with self.lock:
                     out = dispatch(t, c.name, args)
@@ -440,6 +458,10 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
             on_progress(tag, report[tag])
         return a
 
+    if "detection" in roles:             # code finds lines no rule reads and queues them
+        from . import detection
+        with h.lock:
+            report["detection scan"] = detection.scan(h.e)
     for role in roles:
         step(role, only, role)
     if not h.touched:

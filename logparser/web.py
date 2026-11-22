@@ -371,10 +371,12 @@ class App:
         from . import audit
         if self.learn_run and self.learn_run["running"]:
             raise ValueError("a learning run is going; it audits what it saves itself")
+        from . import detection
         with self.lock:
             res = audit.run(self.eng, None, route_failures=True, max_rounds=self.eng.settings.audit_max_rounds)
+            res["detection_scan"] = detection.scan(self.eng)      # lines no rule reads: queued, still free
         self.last_audit = {**{k: res[k] for k in ("groups_checked", "groups_failing", "lines_checked", "by_check",
-                                                  "routed", "fixed_by_code")},
+                                                  "routed", "fixed_by_code", "detection_scan")},
                            "at": time.time(), "failing": res["failing"][:50]}
         return self.last_audit
 
