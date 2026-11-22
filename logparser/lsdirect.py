@@ -274,6 +274,23 @@ FAIL_COND = " or ".join(f'"{t}" in [tags]' for t in _FAILS)
 FAIL_TAG_LIST = "[" + ", ".join(f'"{t}"' for t in _FAILS) + "]"
 
 
+def array_paths(body: dict, schema) -> list:
+    """Prefixes of mapped paths that are list attributes in OCSF (e.g. finding_info_list), deepest first: the
+    agent writes them as one element (finding_info_list.title) and code turns them into lists."""
+    out = set()
+    for m in body.get("map") or []:
+        parts = m["to"].split(".")
+        for i in range(1, len(parts) + 1):
+            a = schema.attr_at(body["class"], ".".join(parts[:i]))
+            if a and a.get("is_array"):
+                out.add(tuple(parts[:i]))
+    return [list(p) for p in sorted(out, key=lambda p: (-len(p), p))]
+
+
+WRAP_RB = ("{w}.each {{ |p| par = p[0..-2].inject(o) {{ |h, k| h.is_a?(Hash) ? h[k] : nil }}; "
+           "next unless par.is_a?(Hash) && par.key?(p[-1]); v = par[p[-1]]; par[p[-1]] = [v] unless v.is_a?(Array) }}\n")
+
+
 def render_parts(body: dict, schema, labels: dict, gid: str, table_var: str, versions: tuple = (1, 1),
                  tz: str | None = None, source: str = "-") -> tuple:
     """(extraction, rest): the agent's extract steps; then the header merge (LP.finish), time, mapping,
@@ -284,6 +301,7 @@ def render_parts(body: dict, schema, labels: dict, gid: str, table_var: str, ver
            "o = (event.get(\"[ocsf]\") || {}).to_h\n"
            "t = event.get(\"[@metadata][s][t]\")\n"
            "o[\"time\"] = (t.to_f * 1000).round if t\n"
+           + (WRAP_RB.format(w=rb(array_paths(body, schema))) if array_paths(body, schema) else "") +
            f"LP.fin(event, o, f, {rb(used)}, {rb(cfg)}, {table_var})\n"
            "if event.get(\"tags\").to_a.include?(\"_lp_datefail\") then event.tag(\"lp_unparsed\"); "
            "event.set(\"[lp][reason]\", \"time_failed\") end\n"
@@ -378,6 +396,13 @@ def records(tools, g: dict, holdout: int = HOLDOUT) -> tuple:
 FOREIGN_PER_GROUP, FOREIGN_MAX = 2, 60
 
 
+def _is_json_object(text: str) -> bool:
+    try:
+        return isinstance(json.loads(text), dict)
+    except (ValueError, TypeError):
+        return False
+
+
 def foreign_records(tools, g: dict, start: int) -> list:
     """Lines of other groups in the same bucket (unstructured formats share one route, so the filters of a
     bucket are tried in turn): a filter must not read them."""
@@ -417,6 +442,10 @@ def run_test(tools, sandbox, group: str, body: dict, labels: dict | None = None)
         return {"ok": False, "error": f"rule is not well formed: {exc!r}"[:400]}
     from .sandbox import tables_for
     samples, hold = records(tools, g)
+    first = next(iter((body.get("extract") or [{}])[0]), None)
+    if samples and first != "json" and all(_is_json_object(r["payload"]) for r in samples + hold):
+        return {"ok": False, "error": "the payload of every line is a JSON object: start the extract with "
+                                      "{\"json\": {}} and map the keys (dots reach nested keys), not grok over JSON text"}
     foreign = foreign_records(tools, g, len(samples) + len(hold))
     recs = samples + hold + foreign
     if not samples + hold:

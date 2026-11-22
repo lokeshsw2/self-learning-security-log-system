@@ -313,3 +313,26 @@ def test_every_plugin_renders_to_config_logstash_loads(tmp_path):
         assert "Unknown setting" in bad["error"]
     finally:
         sb.stop()
+
+
+def test_list_attributes_are_wrapped_by_code():
+    body = {"class": "incident_finding", "extract": [{"json": {}}],
+            "map": [{"to": "finding_info_list.title", "from": "t"}, {"to": "finding_info_list.uid", "from": "id"},
+                    {"to": "status_id", "value": 1}, {"to": "activity_id", "value": 1}]}
+    D.validate(body, SCHEMA)
+    assert D.array_paths(body, SCHEMA) == [["finding_info_list"]]
+    _, rest = D.render_parts(body, SCHEMA, {}, "g", "T")
+    assert '[["finding_info_list"]].each' in rest
+    assert D.array_paths(RULE, SCHEMA) == []
+
+
+def test_json_payload_needs_the_json_step(tmp_path):
+    eng = make(tmp_path)
+    feed(eng, tmp_path, ['{"user": "u%d", "src": "10.0.0.%d", "act": "login"}' % (i, i) for i in range(8)])
+    gid = next(g["signature"] for g in eng.groups.values() if g["count"] == 8)
+    Tools.sandbox = FakeSandbox(lambda r: {"ocsf": GOOD_EVENT, "sb": {"t": 1}})
+    try:
+        res = Tools(eng, "t").test_lsfilter(gid, {**RULE, "extract": [{"grok": {"patterns": ["\"user\": \"%{WORD:user}\""]}}]})
+        assert not res["ok"] and "JSON object" in res["error"] and not Tools.sandbox.calls
+    finally:
+        Tools.sandbox = None

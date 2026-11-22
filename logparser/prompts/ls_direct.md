@@ -12,7 +12,11 @@ What your filter receives
 
 Work steps
 1. `ls_samples`: read the raw lines, the payloads and the header fields. Decide the event type.
-2. `search_ocsf` / `get_class`: pick the class and read its required attributes and enums.
+2. `search_ocsf` / `get_class`: pick the class and read its required attributes and enums. Pick a class
+   whose required attributes these lines can fill: if a required one is empty on the lines (e.g.
+   incident_finding needs an assignee), use the next best class (alerts and incidents fit
+   detection_finding) rather than stopping. Use base_event only when no class fits.
+   JSON lines: start with {"json": {}} and map the keys; do not grok JSON text.
 3. Write the rule, `test_lsfilter`, read the errors and the first event, fix, test again.
 4. `save_lsfilter` with labels (vendor, product). Stop after 6 tests without success and reply FLAG: reason.
 
@@ -50,6 +54,8 @@ map entries (OCSF paths of the class; time, class_uid, category_uid, type_uid ar
 - {"to": "src_endpoint.port", "from": "src_port", "convert": "integer"}
 - {"to": "status_id", "value": 2}                             a constant; it must be true for every line
 - {"to": "activity_id", "from": "action", "translate": {"login": 1, "logout": 2}, "fallback": 99}
+- list attributes (e.g. finding_info_list, observables, metadata.labels): write them as one element,
+  "finding_info_list.title"; code turns them into lists
 Captions (status, activity_name, severity, ...) are added by code from the ids. Parsed fields you do not
 map go to `unmapped`.
 
