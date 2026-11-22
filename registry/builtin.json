@@ -654,6 +654,20 @@
   },
   {
    "body": {
+    "key_pattern": "(?:^|\\n)(?P<k>[A-Za-z][A-Za-z0-9]*): ?",
+    "mode": "span",
+    "strip": " \r\n\t"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "one `Key: value` per line inside a multi-line text field",
+    "source": "this project"
+   },
+   "rule_id": "dialect:kv_lines"
+  },
+  {
+   "body": {
     "key_pattern": "(?:^|\\s)(?P<k>[A-Za-z_][\\w.\\-]*)=",
     "mode": "span",
     "strip": " \t"

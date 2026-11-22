@@ -75,6 +75,8 @@ def scan(engine: Engine, touched: set | None = None) -> dict:
         g = engine.groups.get(gid)
         if not g or g["merged_into"] or g["status"] == "split" or g["count"] < max(s.group_threshold, s.ambiguous_min_lines):
             continue
+        if g["_stats"] is None:
+            g["_stats"] = store.stats(gid)
         cls = engine.classify(g)
         amb = sorted(f for f, c in cls.items() if c == "ambiguous" and not f.startswith("#"))
         if amb != (g["detail"].get("ambiguous") or []):
@@ -163,6 +165,21 @@ def scan(engine: Engine, touched: set | None = None) -> dict:
                     "question": "A free-text tail (a command line, a message, a user agent) is splitting one event "
                                 "into many groups. Which mask pattern covers the tail?",
                     "answer_with": "remask"}):
+                out["remask_candidates"] += 1
+    # a source where most groups are rare: signatures keep growing because a variable is not masked
+    for source in {engine.groups[g]["source"] for g in gids if g in engine.groups}:
+        if store.decision(source, "remask:prefix") or engine.sources.get(source, {}).get("quarantined"):
+            continue
+        live = [engine.groups[x] for x in engine.source_sigs.get(source, ())
+                if x in engine.groups and not engine.groups[x]["merged_into"]
+                and (engine.groups[x]["format"] == "unstructured" or engine.groups[x]["detail"].get("text"))
+                and not engine.groups[x]["detail"].get("parent")]
+        rare = sum(1 for g in live if g["count"] < s.group_threshold)
+        if len(live) >= 15 and rare >= 0.6 * len(live):
+            if store.enqueue("grouping-repair", f"remask:{source}", {
+                    "symptom": "many rare groups", "source": source, "groups": len(live), "rare_groups": rare,
+                    "question": "Most groups of this source hold only a few lines, so a variable part is probably not "
+                                "masked. Which mask pattern covers it?", "answer_with": "remask"}):
                 out["remask_candidates"] += 1
     # retire signatures that have been idle past their TTL and never got a rule
     for gid, g in engine.groups.items():

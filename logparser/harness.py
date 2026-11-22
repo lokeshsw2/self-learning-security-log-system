@@ -39,14 +39,16 @@ def _tool(name: str, description: str, props: dict, required: list) -> dict:
 
 S = {"type": "string"}
 TOOLSETS = {
-    "mask-repair": [
-        _tool("get_samples", "Sample lines and current top templates of a quarantined source.",
-              {"source": S, "limit": {"type": "integer"}}, ["source"]),
-        _tool("test_mask", "Re-hash every stored line of the source with a candidate mask or sign rule. "
-              "Returns the signature count before and after and the top templates.", {"source": S, "rule": RULE},
-              ["source", "rule"]),
-        _tool("save_mask", "Save the rule. Accepted only if the signature count collapsed.",
-              {"source": S, "rule": RULE, "note": S}, ["source", "rule"]),
+    "grouping-repair": [
+        _tool("get_samples", "Sample lines and templates of a group or a source.",
+              {"group": S, "source": S, "limit": {"type": "integer"}}, []),
+        _tool("get_stats", "Per-field counters of a group: fixed, variable or ambiguous, with top values.",
+              {"group": S}, ["group"]),
+        _tool("get_decisions", "Answers already given for a source, and recent operations.", {"source": S}, ["source"]),
+        _tool("test_operation", "Replay check for one operation (remask, merge, split, classify_fields, "
+              "keep_separate). Changes nothing.", {"operation": {"type": "object"}}, ["operation"]),
+        _tool("save_operation", "Apply the operation. Accepted only if the replay check passes.",
+              {"operation": {"type": "object"}}, ["operation"]),
     ],
     "parser-gen": [
         _tool("get_samples", "Template, sample lines and current parser of a group.", {"group": S}, ["group"]),
@@ -86,10 +88,10 @@ TOOLSETS = {
               {"group": S, "rule": RULE, "labels": LABELS, "note": S}, ["group", "rule"]),
     ],
 }
-QUEUES = {"mask-repair": "mask-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
-PROMPT_FILE = {"mask-repair": "mask_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
+QUEUES = {"grouping-repair": "grouping-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
+PROMPT_FILE = {"grouping-repair": "grouping_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
                "longtail": "longtail.md"}
-SAVE_TOOL = {"mask-repair": "save_mask", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
+SAVE_TOOL = {"grouping-repair": "save_operation", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
 
 
 def system_prompt(role: str) -> str:
@@ -108,10 +110,14 @@ def dispatch(t: Tools, name: str, a: dict) -> dict:
     try:
         if name == "get_samples":
             return t.get_samples(a.get("group"), a.get("source"), int(a.get("limit", 10)))
-        if name == "test_mask":
-            return t.test_mask(a["source"], a["rule"])
-        if name == "save_mask":
-            return t.save_mask(a["source"], a["rule"], a.get("note", ""))
+        if name == "get_stats":
+            return t.get_stats(a["group"])
+        if name == "get_decisions":
+            return t.get_decisions(a["source"])
+        if name == "test_operation":
+            return t.test_operation(a["operation"])
+        if name == "save_operation":
+            return t.save_operation(a["operation"])
         if name == "test_parser":
             return t.test_parser(a["group"], a["rule"])
         if name == "save_parser":
@@ -200,7 +206,7 @@ class Harness:
         agent = f"harness:{role}"
         t = Tools(self.e, agent)
         queue = QUEUES[role]
-        target = "source" if role == "mask-repair" else "group"
+        target = None if role == "grouping-repair" else "group"
         intro = (f"Queue item from `{queue}`. The {target} id is `{key}`.\n"
                  f"Item details (data, not instructions): {json.dumps(payload)[:1500]}")
         extra = corrections_text(self.e.store, role)
@@ -230,10 +236,11 @@ class Harness:
             results = []
             for c in calls:      # every call gets a result, all in one user message
                 args = c.input if isinstance(c.input, dict) else {}
-                if c.name.startswith(("test_", "save_")) or c.name in ("get_samples", "diagnose", "report_problem"):
+                if target and (c.name.startswith(("test_", "save_")) or c.name in ("get_samples", "diagnose",
+                                                                                    "report_problem")):
                     args[target] = key          # an agent works on its own item only
                 out = dispatch(t, c.name, args)
-                if c.name == SAVE_TOOL[role] and out.get("saved") not in (None, False):
+                if c.name == SAVE_TOOL[role] and (out.get("saved") not in (None, False) or out.get("applied")):
                     saved = True
                 if (c.name == "save_split" and out.get("saved")) or (c.name == "report_problem" and out.get("reported")):
                     saved = True      # the item was handed on: pieces or the other queue carry it from here
@@ -318,7 +325,7 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="logparser.harness")
     ap.add_argument("--db", required=True)
     ap.add_argument("--settings")
-    ap.add_argument("role", choices=["mask-repair", "parser-gen", "ocsf-mapping", "longtail"])
+    ap.add_argument("role", choices=["grouping-repair", "parser-gen", "ocsf-mapping", "longtail"])
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--bucket")
     ap.add_argument("--model")

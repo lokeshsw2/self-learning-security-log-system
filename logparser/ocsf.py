@@ -30,6 +30,10 @@ class Schema:
         self.classes = dict(raw["classes"])
         self.classes.setdefault("base_event", raw["base_event"])
         self.by_uid = {c["uid"]: n for n, c in self.classes.items()}
+        # extension classes are keyed "win/registry_key_activity" but named without the prefix
+        for n, c in list(self.classes.items()):
+            self.classes.setdefault(c["name"], c)
+            self.classes.setdefault(n.split("/")[-1], c)
         self._rx_cache: dict = {}
 
     # ------------------------------------------------------------ lookup

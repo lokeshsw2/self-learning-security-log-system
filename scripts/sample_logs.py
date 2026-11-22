@@ -36,6 +36,32 @@ def sample(path: str, out: str, labels, n: int) -> tuple[int, int]:
                 if not line:
                     break
                 line = line.rstrip(b"\r\n")
+                if b'Hint"' in line and line.lstrip().startswith(b"{"):
+                    # JSON sources carry the annotation as keys: remove them at any depth
+                    try:
+                        obj = json.loads(line)
+                        found = {}
+
+                        def strip(o):
+                            if isinstance(o, dict):
+                                for k in [k for k in o if k.endswith("Hint") or k == "TTP"]:
+                                    found[k] = str(o.pop(k))
+                                for v in o.values():
+                                    strip(v)
+                            elif isinstance(o, list):
+                                for v in [v for v in o if isinstance(v, dict) and isinstance(v.get("key"), str)
+                                          and (v["key"].endswith("Hint") or v["key"] == "TTP")]:
+                                    found[v["key"]] = str(v.get("value"))
+                                    o.remove(v)
+                                for v in o:
+                                    strip(v)
+                        strip(obj)
+                        if found:
+                            line = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode()
+                            hinted += 1
+                            labels.write(json.dumps({"source": name, "line": wrote, "hints": found}) + "\n")
+                    except ValueError:
+                        pass
                 m = HINT.search(line)
                 if m:
                     hint = m.group(0)
