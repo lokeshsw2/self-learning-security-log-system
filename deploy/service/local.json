@@ -1,0 +1,10 @@
+{
+ "kafka": {"bootstrap": "127.0.0.1:19092", "unparsed_topic": "logs.unparsed", "parsed_topic": "logs.parsed",
+           "group_id": "lp-learner", "batch_max": 2000, "poll_timeout_s": 1.0, "create_topics": true, "partitions": 4},
+ "store": {"url": "sqlite:///work/service/learner.db"},
+ "engine_settings": "config/production.json",
+ "learning": {"enabled": false, "interval_s": 300, "model": "claude-sonnet-5-5", "roles": "all",
+              "limit": 20, "fix_rounds": 1, "budget_usd_per_cycle": 0.5, "budget_usd_per_day": 5.0},
+ "logstash": {"variant": "compiled", "config_dir": "work/service/logstash"},
+ "clickhouse": {"url": "http://localhost:8123", "database": "logs"}
+}
