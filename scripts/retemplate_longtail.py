@@ -7,7 +7,6 @@ Stop the UI server first: both would write the same database.
 """
 import argparse
 import os
-import shutil
 import sys
 import tempfile
 import types
@@ -27,9 +26,11 @@ def main() -> None:
     a = ap.parse_args()
     db = a.db
     if a.dry_run:                       # work on a throwaway copy
+        import sqlite3
         tmp = tempfile.mkdtemp()
         db = os.path.join(tmp, "copy.db")
-        shutil.copy(a.db, db)
+        with sqlite3.connect(a.db) as src, sqlite3.connect(db) as dst:
+            src.backup(dst)            # includes writes still in the -wal file; a file copy would not
     eng = open_engine(types.SimpleNamespace(db=db, settings=a.settings))
     if a.clickhouse and not a.dry_run:
         from logparser.sink import ClickHouseSink

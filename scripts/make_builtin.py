@@ -191,6 +191,16 @@ add("mapping:longtail-base", {
          "note": "the time text as written"},
         {"to": "severity_id", "from": "@pri", "transform": {"fn": "syslog_severity", "args": {"from_pri": True}},
          "confidence": "high", "note": "syslog PRI severity bits"},
+        {"to": "status_id", "from": "outcome", "confidence": "medium",
+         "transform": {"fn": "enum_lookup", "args": {"default": 99, "case_insensitive": True, "patterns": {
+             # checked first (patterns are stored sorted and "(" sorts before "\\"): failure words and negations
+             "(?i)(\\b(not|no|never)\\s+\\w+|\\b(denied|deny|blocked|block|dropped|drop|rejected|reject|refused|"
+             "failed|fail|failure|invalid|unauthorized|forbidden|locked|expired|timeout|error)\\b)": 2,
+             "(?i)\\b(allowed|allow|accepted|accept|permitted|permit|granted|success|succeeded|successful|"
+             "authorized|authenticated|passed|ok)\\b": 1}}},
+         "note": "outcome word the long-tail agent copied from the line: failure words -> Failure, success words "
+                 "-> Success, anything else -> Other"},
+        {"to": "status_detail", "from": "outcome", "confidence": "high", "note": "the outcome word as written"},
     ]}, "Fallback for rare lines handled by the long-tail agent: OCSF Base Event with the line's own time")
 
 os.makedirs(os.path.join(ROOT, "registry", "seeds"), exist_ok=True)

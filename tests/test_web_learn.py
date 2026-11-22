@@ -10,7 +10,7 @@ from tests.test_harness import GOOD, FakeClient
 def app_for(eng, client):
     app = App.__new__(App)
     app.eng, app.ch, app.lock, app.streams = eng, None, threading.RLock(), {}
-    app.learn_run, app.learn_client = None, client
+    app.learn_run, app.learn_client, app.last_audit = None, client, None
     return app
 
 

@@ -40,6 +40,7 @@ class App:
         self.lock = threading.RLock()
         self.streams: dict = {}
         self.learn_run: dict | None = None
+        self.last_audit: dict | None = None
         self.learn_client = None          # tests put a fake model client here
 
     # ------------------------------------------------------------------ ingest
@@ -321,7 +322,7 @@ class App:
                        results=list(h.results[-200:]) if h else [])
         from .harness import PRICES
         return {"models": [{"id": m, "input": p[0], "output": p[1]} for m, p in PRICES.items()],
-                "default_model": DEFAULT_LEARN_MODEL,
+                "default_model": DEFAULT_LEARN_MODEL, "last_audit": self.last_audit,
                 "key_configured": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
                 "waiting": waiting, "run": pub}
 
@@ -344,21 +345,17 @@ class App:
         self.learn_run = run
 
         def go():
+            from .harness import learn
             try:
                 h = Harness(self.eng, client=self.learn_client, model=model, budget_usd=budget_usd,
                             lock=self.lock, stop=stop)
                 run["_h"] = h
-                for role in roles:
-                    if h.stopped():
-                        run["summary"][role] = {"skipped": "budget reached" if h.over_budget() else "stopped"}
-                        continue
-                    run["role"] = role
-                    if role == "longtail":
-                        run["summary"][role] = h.run_longtail(limit, model=model)
-                    else:
-                        res = h.run_queue(role, limit)
-                        run["summary"][role] = {"items": len(res), "saved": sum(r["saved"] for r in res),
-                                                "flagged": sum(not r["saved"] for r in res)}
+
+                def progress(tag, rep):
+                    if isinstance(rep.get("flagged"), list):
+                        rep = {**rep, "flagged": len(rep["flagged"])}
+                    run["summary"][tag] = rep
+                learn(h, roles, limit, model, fix_rounds=1, on_progress=progress)
             except Exception as exc:
                 traceback.print_exc()
                 run["error"] = f"{type(exc).__name__}: {exc}"[:500]
@@ -367,6 +364,18 @@ class App:
 
         threading.Thread(target=go, daemon=True).start()
         return self.learn_status()
+
+    def audit_all(self) -> dict:
+        """Self-audit every group with a rule against its own lines; failures go back to the agents'
+        queues (or to human review). Code only: no model calls."""
+        from . import audit
+        if self.learn_run and self.learn_run["running"]:
+            raise ValueError("a learning run is going; it audits what it saves itself")
+        with self.lock:
+            res = audit.run(self.eng, None, route_failures=True, max_rounds=self.eng.settings.audit_max_rounds)
+        self.last_audit = {**{k: res[k] for k in ("groups_checked", "groups_failing", "lines_checked", "by_check",
+                                                  "routed")}, "at": time.time(), "failing": res["failing"][:50]}
+        return self.last_audit
 
     def learn_stop(self) -> dict:
         if self.learn_run:
@@ -453,6 +462,11 @@ def make_handler(app: App):
                         return self._json(app.learn_start(list(b.get("roles") or []), int(b.get("limit", 10)),
                                                           float(b.get("budget_usd", 2)),
                                                           str(b.get("model") or DEFAULT_LEARN_MODEL)))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                if u.path == "/api/audit":
+                    try:
+                        return self._json(app.audit_all())
                     except ValueError as exc:
                         return self._json({"error": str(exc)}, 400)
                 if u.path == "/api/learn/stop":

@@ -17,3 +17,10 @@ Ground rules
   confidence, or leave the field in `unmapped`.
 - The rule language is described in docs/RULES.md. Rules are JSON. There is no
   way to add code, and no need to.
+
+Self-audit feedback
+- After rules are saved, code checks the events they produce against every stored line of the
+  group. An item it sends back carries `reported_by: "audit"`, `audit_round`, a `reason` and
+  `examples`: lines where the result was wrong and what was wrong (`check`: value, leak, time,
+  outcome, invalid, unparsed). Fix the rule so those lines come out right, test it on them, and
+  save the new version. A group that fails the audit again goes to a human.

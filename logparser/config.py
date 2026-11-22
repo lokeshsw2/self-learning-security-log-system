@@ -36,6 +36,8 @@ class Settings:
     # Idle batches before a below-threshold group goes to the long-tail queue,
     # and before an idle signature with no rule is dropped (TTL).
     longtail_idle_batches: int = 2
+    # Self-audit: after this many audit reports on one group, it goes to human review
+    audit_max_rounds: int = 2
     ttl_idle_batches: int = 500
     # Save gates.
     parser_min_match: float = 1.0       # on the samples the agent saw

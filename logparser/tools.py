@@ -928,11 +928,14 @@ class Tools:
         return {"cached": False, "note": "nothing cached for this vendor/product"}
 
     # ------------------------------------------------------------ long tail
-    def longtail_batch(self, limit: int = 40, bucket: str | None = None) -> dict:
+    def longtail_batch(self, limit: int = 40, bucket: str | None = None, only: set | None = None) -> dict:
         items = []
         for it in self.store.queue_items("longtail"):
+            if only is not None and it["key"] not in only:
+                continue
             g = self.e.canonical(it["key"])
-            if g and self.e.snap.rule("longtail:" + g["signature"]):
+            audit = it["payload"].get("reported_by") == "audit"
+            if g and self.e.snap.rule("longtail:" + g["signature"]) and not audit:
                 self.store.queue_done("longtail", it["key"])      # learned already: never pay for it twice
                 continue
             if not g or g["parser_rule"] or (bucket and bucket not in g["bucket"] + "|" + g["source"]):
@@ -940,8 +943,14 @@ class Tools:
             s = self.store.samples(g["signature"])
             if not s:
                 continue
-            items.append({"signature": g["signature"], "bucket": g["bucket"], "count": g["count"],
-                          "template": _clip(g["template"])[:400], "raw": _clip(s[0]["raw"])})
+            item = {"signature": g["signature"], "bucket": g["bucket"], "count": g["count"],
+                    "template": _clip(g["template"])[:400], "raw": _clip(s[0]["raw"])}
+            if audit:        # the self-audit sent it back: say what was wrong and show lines that differ
+                p = it["payload"]
+                item["feedback"] = {"problem": str(p.get("reason", ""))[:600],
+                                    "other_lines": [_clip(x["line"])[:300] for x in p.get("examples", [])[:3]],
+                                    "findings": [str(x.get("problem", ""))[:240] for x in p.get("examples", [])[:3]]}
+            items.append(item)
             if len(items) >= limit:
                 break
         self._log("longtail_batch", bucket, True, f"{len(items)} items")

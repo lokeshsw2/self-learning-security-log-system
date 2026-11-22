@@ -20,3 +20,7 @@ numbers) are replaced by code with each line's own values, so copy them exactly.
 For `timestamp`, copy the whole time as written, including any zone after it.
 
 There is a daily budget. When the tool reports the budget is used up, stop.
+
+A line may carry `feedback`: the self-audit found the earlier rule wrong on other lines of the
+same group (`other_lines`, `findings`). Write the fields and summary so they hold for every one of
+those lines: describe the event type, and copy only values that each line has at the same place.

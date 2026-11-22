@@ -166,13 +166,14 @@ export interface LearnRun {
   role: Role | null
   error: string | null
   current: { role: Role; key: string; iteration: number } | null
-  summary: Partial<Record<Role, Record<string, Json>>>
+  summary: Record<string, Record<string, Json>>
   results: LearnResult[]
 }
 
 export interface LearnStatus {
   models: { id: string; input: number; output: number }[]
   default_model: string
+  last_audit: (Record<string, Json> & { at: number }) | null
   key_configured: boolean
   waiting: Record<Role, number>
   run: LearnRun | null
@@ -212,6 +213,7 @@ export const api = {
   learn: () => call<LearnStatus>("/api/learn"),
   startLearn: (roles: Role[], limit: number, budget_usd: number, model: string) =>
     call<LearnStatus>("/api/learn", { method: "POST", body: JSON.stringify({ roles, limit, budget_usd, model }) }),
+  audit: () => call<Record<string, Json>>("/api/audit", { method: "POST" }),
   stopLearn: () => call<LearnStatus>("/api/learn/stop", { method: "POST" }),
   stopStream: (id: string) => call<{ stopped: boolean }>(`/api/streams/stop?${qs({ id })}`, { method: "POST" }),
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { KeyRound, Play, Square } from "lucide-react"
+import { KeyRound, Play, ShieldCheck, Square, Wrench } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ErrorNote, Mono, useLoad } from "@/components/common"
-import { api, ago, fmt, type LearnRun, type Role } from "@/lib/api"
+import { api, ago, fmt, type Json, type LearnRun, type Role } from "@/lib/api"
 
 const AGENTS: { role: Role; label: string; note: string }[] = [
   { role: "source-naming", label: "Name sources", note: "vendor and product from content" },
@@ -59,6 +59,21 @@ export function LearnPanel({ onChange }: { onChange?: () => void }) {
       await api.startLearn(roles, Number(limit) || 5, Number(budget) || 2, chosen)
       toast.success("Learning run started")
       reload()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runAudit() {
+    setBusy(true)
+    try {
+      const r = await api.audit()
+      const n = Number(r.groups_failing)
+      toast(n ? `${n} groups produce wrong events; sent back to the agents` : "Every group checked out")
+      reload()
+      onChange?.()
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -155,6 +170,9 @@ export function LearnPanel({ onChange }: { onChange?: () => void }) {
               <Play /> Start learning
             </Button>
           )}
+          <Button variant="outline" onClick={runAudit} disabled={busy || running}>
+            <ShieldCheck /> Run self-audit
+          </Button>
           <span className="pb-2 text-xs text-muted-foreground">
             {selectedWaiting === 0 && !running
               ? "Nothing waiting for the selected agents."
@@ -162,9 +180,67 @@ export function LearnPanel({ onChange }: { onChange?: () => void }) {
           </span>
         </div>
 
+        {data?.last_audit && (!data.run || data.last_audit.at > data.run.started) && (
+          <div className="rounded-lg border p-3">
+            <SummaryLine tag="audit" s={data.last_audit} />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Code only, no AI and no cost. Wrong groups wait in the agents' queues below; Start learning fixes them.
+            </p>
+          </div>
+        )}
         {data?.run && <RunView run={data.run} />}
       </CardContent>
     </Card>
+  )
+}
+
+// one line per step of a run: an agent, the self-audit, or a fix round
+function SummaryLine({ tag, s }: { tag: string; s: Record<string, Json> }) {
+  if (tag.startsWith("audit")) {
+    const failing = Number(s.groups_failing)
+    const routed = Object.entries((s.routed ?? {}) as Record<string, number>)
+    const checks = Object.entries((s.by_check ?? {}) as Record<string, number>)
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 text-sm">
+        <Badge variant={failing ? "destructive" : "secondary"}>
+          <ShieldCheck /> {tag === "audit" ? "Self-audit" : `Self-audit, round ${tag.split(" ")[1]}`}
+        </Badge>
+        <span className="text-muted-foreground">
+          {fmt(Number(s.groups_checked))} groups, {fmt(Number(s.lines_checked))} lines checked against their own text:
+        </span>
+        {failing === 0 ? (
+          <span>all correct</span>
+        ) : (
+          <>
+            <span>{fmt(failing)} groups wrong</span>
+            {checks.map(([c, n]) => <Badge key={c} variant="outline" className="font-normal">{c}: {fmt(n)} lines</Badge>)}
+            {routed.map(([q, n]) => (
+              <Badge key={q} variant="outline" className="font-normal">
+                {q === "human-review" ? `${fmt(n)} to human review` : `${fmt(n)} sent back to the agent`}
+              </Badge>
+            ))}
+          </>
+        )}
+      </div>
+    )
+  }
+  const fix = tag.match(/^fix (\d+): (.+)$/)
+  const role = (fix ? fix[2] : tag) as Role
+  const text =
+    "skipped" in s
+      ? String(s.skipped)
+      : role === "longtail"
+        ? `${fmt(Number(s.saved))} saved${s.stopped ? `, ${s.stopped}` : ""}`
+        : `${fmt(Number(s.saved))} of ${fmt(Number(s.items))} saved`
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-sm">
+      <Badge variant="outline" className="font-normal">
+        {fix ? <Wrench /> : null}
+        {fix ? `Fix round ${fix[1]} · ` : ""}
+        {LABEL[role] ?? role}
+      </Badge>
+      <span className="text-muted-foreground">{text}</span>
+    </div>
   )
 }
 
@@ -192,16 +268,9 @@ function RunView({ run }: { run: LearnRun }) {
       </div>
       {run.error && <ErrorNote error={run.error} />}
       {Object.keys(run.summary).length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {Object.entries(run.summary).map(([role, s]) => (
-            <Badge key={role} variant="outline" className="font-normal">
-              {LABEL[role as Role]}:{" "}
-              {s && "skipped" in s
-                ? String(s.skipped)
-                : role === "longtail"
-                  ? `${fmt(Number(s?.saved))} saved${s?.stopped ? `, ${s.stopped}` : ""}`
-                  : `${fmt(Number(s?.saved))} of ${fmt(Number(s?.items))} saved`}
-            </Badge>
+        <div className="space-y-2">
+          {Object.entries(run.summary).map(([tag, s]) => (
+            <SummaryLine key={tag} tag={tag} s={(s ?? {}) as Record<string, Json>} />
           ))}
         </div>
       )}
