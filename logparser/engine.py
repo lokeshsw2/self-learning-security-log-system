@@ -28,7 +28,50 @@ DEFAULT_MAPPING = "mapping:default-base"
 LONGTAIL_MAPPING = "mapping:longtail-base"
 
 
-def longtail_fields(body: dict, variables: list, text: str) -> dict:
+# Summary slots: {3} a whole masked value, {3#1} its 2nd token, {3>user} the token after `user`
+# inside masked value 3, {@host} a header field.
+SLOT = re.compile(r"\{(@[\w.\-]+|\d+(?:#\d+|>[^{}\s]+)?)\}")
+TOK = re.compile(r"[^\s=@:,;/\"'()\[\]<>]+")
+
+
+def render_summary(templ: str, vals: list, header: dict | None) -> str | None:
+    """Fill a summary template from one line; None when any slot has no value on this line."""
+    header = header or {}
+    failed = False
+
+    def one(m):
+        nonlocal failed
+        s = m.group(1)
+        if s.startswith("@"):
+            v = header.get(s)
+            if isinstance(v, str) and v:
+                return v
+            failed = True
+            return ""
+        i, _, rest = s.partition("#") if "#" in s else s.partition(">")
+        i = int(i)
+        if i >= len(vals):
+            failed = True
+            return ""
+        if not rest:
+            return vals[i]
+        toks = TOK.findall(vals[i])
+        if "#" in s:
+            k = int(rest)
+            if k < len(toks):
+                return toks[k]
+        else:
+            for j in range(len(toks) - 1):
+                if toks[j] == rest:
+                    return toks[j + 1]
+        failed = True
+        return ""
+
+    out = SLOT.sub(one, templ)
+    return None if failed else out
+
+
+def longtail_fields(body: dict, variables: list, text: str, header: dict | None = None) -> dict:
     """Apply a positional long-tail rule to one line's masked values."""
     vals = [v for _, v in variables]
     fields = {}
@@ -43,10 +86,11 @@ def longtail_fields(body: dict, variables: list, text: str) -> dict:
             val = vals[spec["var"]]
             fields[name] = val.strip(spec["trim"]) if spec.get("trim") else val
     if body.get("summary_t"):
-        fields["summary"] = re.sub(r"\{(\d+)\}", lambda m: vals[int(m.group(1))] if int(m.group(1)) < len(vals)
-                                   else "?", body["summary_t"])
+        fields["summary"] = render_summary(body["summary_t"], vals, header) or text.strip()[:500]
     elif body.get("summary"):
         fields["summary"] = body["summary"]
+    else:
+        fields["summary"] = text.strip()[:500]     # no safe description: the line itself
     return fields
 MAX_SOURCES_PER_LABEL = 2000
 
@@ -573,7 +617,7 @@ class Engine:
             lt = self.snap.rule("longtail:" + g["signature"])
             if not lt:
                 return {"status": "pending"}
-            fields = longtail_fields(lt["body"], sg.variables, rec.text)
+            fields = longtail_fields(lt["body"], sg.variables, rec.text, det.header)
             for k, v in det.header.items():
                 fields.setdefault(k, v)
             tags.append("ai_extracted")

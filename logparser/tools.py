@@ -21,7 +21,7 @@ import sys
 import time
 
 from . import ocsf, parsers, registry, rx, signature
-from .engine import DEFAULT_MAPPING, STRUCTURED, Engine, longtail_fields
+from .engine import DEFAULT_MAPPING, STRUCTURED, TOK, Engine, longtail_fields, render_summary
 from .formats import ParseError
 from .reader import Record
 
@@ -75,16 +75,41 @@ def _parts(payload: str, variables: list, value: str) -> list | None:
     return parts
 
 
-def _summary_template(summary: str, variables: list) -> str:
-    """Replace the sample line's masked values that appear in the summary with {n} slots,
-    so each line's summary carries its own values. Longest values first, whole tokens only."""
+def _summary_template(summary: str, variables: list, header: dict | None = None,
+                      rows: list | None = None) -> str | None:
+    """Turn the sample line's values in a summary into slots filled from each line: whole masked
+    values, tokens inside a masked value (by the fixed key before them where every stored line
+    has it, else by position) and header fields. Longest values first, whole words only.
+    `rows` are (variables, header) of every stored line of the group; the template must fill on
+    each of them, or None is returned and the caller keeps no summary."""
+    rows = rows or [(variables, header or {})]
+    cands = []
+    for i, (_, v) in enumerate(variables):
+        if len(v) >= 2:
+            cands.append((v, "{%d}" % i))
+        toks = TOK.findall(v)
+        for k, t in enumerate(toks):
+            if len(t) < 2 or t == v:
+                continue
+            prev = toks[k - 1] if k else None
+            steady = prev is not None and len(rows) >= 2 and all(
+                prev in TOK.findall(rv[i][1])[:-1] for rv, _ in rows if i < len(rv))
+            cands.append((t, "{%d>%s}" % (i, prev) if steady else "{%d#%d}" % (i, k)))
+    for k, v in (header or {}).items():
+        if isinstance(v, str) and len(v) >= 2 and k.startswith("@") and re.fullmatch(r"@[\w.\-]+", k):
+            cands.append((v, "{%s}" % k))
     out = summary
-    order = sorted(range(len(variables)), key=lambda i: -len(variables[i][1]))
-    for i in order:
-        v = variables[i][1]
-        if len(v) < 2:
+    seen = set()
+    for val, slot in sorted(cands, key=lambda c: -len(c[0])):
+        if val in seen:
             continue
-        out = re.sub(r"(?<![\w.{])" + re.escape(v) + r"(?![\w])", "{%d}" % i, out)
+        seen.add(val)
+        pat = re.compile(r"(?<![\w.])" + re.escape(val) + r"(?![\w])")
+        parts = re.split(r"(\{[^{}]*\})", out)            # never rewrite inside a slot
+        out = "".join(p if p.startswith("{") and p.endswith("}") else pat.sub(lambda _m: slot, p) for p in parts)
+    for rv, rh in rows:
+        if render_summary(out, [v for _, v in rv], rh) is None:
+            return None
     return out
 
 
@@ -922,6 +947,52 @@ class Tools:
         self._log("longtail_batch", bucket, True, f"{len(items)} items")
         return {"notice": NOTICE, "allowed_fields": list(registry.LONGTAIL_FIELDS), "items": items}
 
+    def _longtail_rows(self, g: dict) -> list:
+        """(masked values, header, raw line) of every stored line of a group."""
+        srows, rest = self._group_rows(g, 500)
+        out = []
+        for row in srows + rest:
+            r = self._rec(row)
+            d, _, c = self.e.analyse(r)
+            out.append((self.e._sign(d, r.label, c).variables, d.header, row["raw"]))
+        return out
+
+    @staticmethod
+    def _summary_body(summary: str, variables: list, header: dict, rows: list) -> dict:
+        summary = " ".join("".join(ch for ch in str(summary or "") if ch.isprintable()).split())[:200]
+        summary = summary.replace("{", "(").replace("}", ")")
+        if not summary:
+            return {}
+        templ = _summary_template(summary, variables, header, [(vs, h) for vs, h, _ in rows] or None)
+        if templ is None:
+            return {}
+        return {"summary": summary, **({"summary_t": templ} if templ != summary else {})}
+
+    def retemplate_longtail(self, sig: str) -> dict:
+        """Rebuild the summary slots of a saved long-tail rule with the current code, from its own
+        summary text and the group's stored lines. No model call."""
+        rid = f"longtail:{sig}"
+        cur = self.store.active_rule(rid)
+        if not cur:
+            raise Refused(f"no active rule {rid}")
+        g = self.e.canonical(sig)
+        s = self.store.samples(g["signature"]) if g else []
+        if not (g and s):
+            return {"rule": rid, "changed": False, "reason": "no stored lines to check against"}
+        body = {k: v for k, v in cur["body"].items() if k not in ("summary", "summary_t")}
+        rec = self._rec({"raw": s[0]["raw"], "source": g["source"]})
+        det, _, cols = self.e.analyse(rec)
+        sg = self.e._sign(det, rec.label, cols)
+        body.update(self._summary_body(cur["body"].get("summary", ""), sg.variables, det.header,
+                                       self._longtail_rows(g)))
+        if body == cur["body"]:
+            return {"rule": rid, "changed": False}
+        registry.validate_rule("longtail", body)
+        v = registry.save_rule(self.store, rid, body, {"created_by": self.agent, "tag": "ai_extracted",
+                                                       "note": "summary slots rebuilt by code"})
+        self._log("retemplate_longtail", sig, True, "summary kept" if "summary" in body else "summary dropped")
+        return {"rule": rid, "changed": True, "version": v, "summary": "summary" in body}
+
     def save_longtail(self, sig: str, fields: dict, summary: str = "") -> dict:
         g = self._group(sig)
         day = time.strftime("%Y-%m-%d")
@@ -964,22 +1035,16 @@ class Tools:
             else:
                 dropped.append(name)
         # every kept field must give a value literally present in every stored line of the group
-        if spec:
-            srows, rest = self._group_rows(g, 500)
-            for row in srows + rest:
-                r = self._rec(row)
-                d, _, c = self.e.analyse(r)
-                got = longtail_fields({"fields": spec}, self.e._sign(d, r.label, c).variables, row["raw"])
-                for name in list(spec):
-                    if name not in got or not got[name] or got[name] not in row["raw"]:
-                        del spec[name]
-                        dropped.append(name)
-        summary = " ".join("".join(ch for ch in str(summary) if ch.isprintable()).split())[:200]
-        summary = summary.replace("{", "(").replace("}", ")")
-        body = {"fields": spec, "summary": summary}
-        templ = _summary_template(summary, sg.variables)
-        if templ != summary:
-            body["summary_t"] = templ      # the sample's values become slots filled from each line
+        rows = self._longtail_rows(g)
+        for vs, _, line in rows:
+            got = longtail_fields({"fields": spec}, vs, line)
+            for name in list(spec):
+                if name not in got or not got[name] or got[name] not in line:
+                    del spec[name]
+                    dropped.append(name)
+        body = {"fields": spec, **self._summary_body(summary, sg.variables, det.header, rows)}
+        if "summary" not in body:
+            dropped.append("summary")     # it would be wrong on some line: events carry the line itself
         registry.validate_rule("longtail", body)
         rule_id = f"longtail:{g['signature']}"
         v = registry.save_rule(self.store, rule_id, body, {"created_by": self.agent, "tag": "ai_extracted"})

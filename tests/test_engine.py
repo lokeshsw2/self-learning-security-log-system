@@ -475,3 +475,50 @@ def test_longtail_with_a_rule_is_not_queued_again(tmp_path):
     feed(eng, tmp_path, [PG2])                       # the group is seen again and finalized again
     assert not eng.store.queue_items("longtail")
     assert Tools(eng, "longtail").longtail_batch()["items"] == []
+
+
+PG_MASK = {"mode": "extend", "priority": 10, "scope": {"bucket": "^unstructured\\|\\-$"}, "patterns": [
+    {"name": "pg_conn_auth", "pattern": "connection authorized: (user=.+)$", "group": 1, "placeholder": "<CONNINFO>"},
+    {"name": "pg_userdb", "pattern": "\\] ([A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+) (?:LOG|ERROR|FATAL)", "group": 1,
+     "placeholder": "<PGUSER>"}]}
+
+
+def pg_auth(i, u, db, app):
+    return (f"2026-11-22 08:0{i}:19.296 UTC [4000{i}] {u}@{db} LOG:  connection authorized: user={u} database={db} "
+            f"application_name={app}")
+
+
+def test_longtail_summary_fills_values_inside_a_masked_value_and_the_host(tmp_path):
+    eng = make(tmp_path, group_threshold=50)
+    registry.save_rule(eng.store, "mask:unstructured", PG_MASK, {"created_by": "test"})
+    eng.reload()
+    feed(eng, tmp_path, [pg_auth(1, "pwong", "hr", "psql"), pg_auth(2, "rlee", "payments", "metabase")])
+    sig = eng.store.queue_items("longtail")[0]["key"]
+    sample = eng.store.samples(sig)[0]["raw"]
+    u, db = ("pwong", "hr") if "pwong" in sample else ("rlee", "payments")
+    app = "psql" if u == "pwong" else "metabase"
+    res = Tools(eng, "longtail").save_longtail(
+        sig, {"action": "connection authorized"}, f"PostgreSQL connection authorized for user {u} to database {db} using {app}.")
+    assert "summary" not in res["dropped"]
+    msgs = {json.loads(r["ocsf"])["message"] for r in eng.store.q("SELECT ocsf FROM events")}
+    assert msgs == {"PostgreSQL connection authorized for user pwong to database hr using psql.",
+                    "PostgreSQL connection authorized for user rlee to database payments using metabase."}
+    # the host comes from the syslog header, not from the sample
+    feed(eng, tmp_path, ["Nov 22 12:00:02 web01 myapp[4411]: payment gateway timeout after 1200 ms for order 99813"])
+    sig2 = eng.store.queue_items("longtail")[0]["key"]
+    Tools(eng, "longtail").save_longtail(sig2, {}, "Payment gateway timeout after 1200 ms for order 99813 on web01.")
+    feed(eng, tmp_path, ["Nov 22 12:00:09 web02 myapp[4411]: payment gateway timeout after 3021 ms for order 99814"])
+    last = json.loads(eng.store.q("SELECT ocsf FROM events ORDER BY raw_id DESC")[0]["ocsf"])
+    assert last["message"] == "Payment gateway timeout after 3021 ms for order 99814 on web02."
+
+
+def test_longtail_summary_that_cannot_be_filled_falls_back_to_the_line(tmp_path):
+    eng = make(tmp_path, group_threshold=50)
+    feed(eng, tmp_path, [PG, PG2])
+    sig = eng.store.queue_items("longtail")[0]["key"]
+    body = {"fields": {}, "summary": "x", "summary_t": "Connection from {9}."}     # slot 9 does not exist
+    registry.save_rule(eng.store, "longtail:" + sig, body, {"created_by": "test"})
+    eng.reload()
+    eng.replay_signatures([sig])
+    msgs = sorted(json.loads(r["ocsf"])["message"] for r in eng.store.q("SELECT ocsf FROM events"))
+    assert msgs == sorted([PG, PG2])                  # never a wrong description: the line itself
