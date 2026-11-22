@@ -86,3 +86,21 @@ def test_report_problem_hands_the_item_to_the_other_queue(tmp_path):
         t.report_problem(sig, "needs-parser", "again")
     assert t.report_problem(sig, "needs-parser", "again")["flagged"]
     assert eng.store.queue_items("needs-parser", status="flagged")[0]["key"] == sig
+
+
+def test_rules_moved_to_a_fresh_database_reach_split_pieces(tmp_path):
+    """A split piece created on a fresh database picks up the mapping learned for it elsewhere."""
+    eng, t, sig = setup(tmp_path)
+    out = t.save_split(sig, {"presence": ["user"]})
+    piece = next(p["group"] for p in out["pieces"] if p["key"] == "has:user=1")
+    t.save_mapping(piece, AUTH)
+    export = tmp_path / "rules.json"
+    registry.export_rules(eng.store, str(export))
+    fresh_dir = tmp_path / "fresh"
+    fresh_dir.mkdir()
+    fresh = make(fresh_dir)
+    registry.import_rules(fresh.store, str(export))
+    fresh.reload()
+    feed(fresh, fresh_dir, [pam(i, user=i % 4 != 0) for i in range(1, 25)])
+    rows = fresh.store.q("SELECT class_uid, COUNT(*) n FROM events GROUP BY class_uid ORDER BY class_uid")
+    assert [(r["class_uid"], r["n"]) for r in rows] == [(0, 6), (3002, 18)]

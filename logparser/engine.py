@@ -280,6 +280,12 @@ class Engine:
                      "parser_rule": g["parser_rule"], "mapping_rule": g["mapping_rule"], "merged_into": None,
                      "drift_of": None, "labels": dict(g["labels"]), "parse_failures": 0,
                      "_samples": [], "_tokens": set(), "_stats": {}}
+            # rules learned for this piece (in this database or imported from another) win over the parent's
+            lp, lm = self.snap.rule("parser:" + csig), self.snap.rule("mapping:" + csig)
+            if lp:
+                child["parser_rule"] = lp["rule_id"]
+            if lm:
+                child["mapping_rule"], child["status"] = lm["rule_id"], "mapped"
             self.groups[csig] = child
             self._register(child)
             self._dirty_groups.add(csig)
