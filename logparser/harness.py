@@ -280,6 +280,7 @@ class Harness:
             extra = corrections_text(self.e.store, role)
         messages = [{"role": "user", "content": intro + ("\n\n" + extra if extra else "")}]
         saved = False
+        more = False          # detection: a rule was saved but other header formats of the item remain
         reason = "iteration limit reached"
         for i in range(self.max_iterations):
             if self.stop is not None and self.stop.is_set():
@@ -320,16 +321,22 @@ class Harness:
                     out = dispatch(t, c.name, args)
                 if c.name == SAVE_TOOL[role] and (out.get("saved") not in (None, False) or out.get("applied")):
                     saved = True
+                    more = bool(out.get("remaining"))
                 if (c.name == "save_split" and out.get("saved")) or (c.name == "report_problem" and out.get("reported")):
                     saved = True      # the item was handed on: pieces or the other queue carry it from here
                 results.append({"type": "tool_result", "tool_use_id": c.id,
                                 "content": json.dumps(out, ensure_ascii=False, default=str)[:60000],
                                 "is_error": bool(out.get("error"))})
             messages.append({"role": "user", "content": results})
-            if saved:
+            if saved and not more:
                 break
         if saved and target == "group":
             self.touched.add(key)
+        if saved and more and reason != "stopped by the user":
+            # rules were saved, but the agent stopped with lines of other header formats unread: a human
+            # looks at the rest, so nobody pays to ask again
+            with self.lock:
+                t.flag(queue, key, f"rules saved, other lines left unread: {reason}")
         if not saved and reason != "stopped by the user":     # a stopped item stays open for the next run
             with self.lock:
                 t.flag(queue, key, reason)

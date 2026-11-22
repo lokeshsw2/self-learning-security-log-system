@@ -49,7 +49,8 @@ HEADED = re.compile(r"^(?:<\d{1,3}>|\d{4}[-/.]\d\d[-/.]\d\d|\d{1,2}[-/.]\d{1,2}[
                     r"\d\d/[A-Za-z]{3}/\d{4}|\d{10,13}(?:\.\d+)?(?:[\s|,;]|$)|\d{1,2}:\d\d:\d\d|"
                     r"\[\d{1,4}[-/:.]|(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s)")
 NEED_ONE_OF = {"timestamp", "host", "app"}
-TIME_CODES = set("YmdbBjHIpMSfz%")              # strptime codes a time_format may use (no %y: century guessing)
+MIN_SUBSET = 5            # one item may hold several header formats: a rule reads at least this many samples
+TIME_CODES = set("YmdbBjaAHIpMSfz%")            # strptime codes a time_format may use (no %y: century guessing)
 ZONE_NAMES = ("UTC GMT UT Z IST CET CEST EET EEST WET WEST BST MSK EST EDT CST CDT MST MDT PST PDT AKST AKDT HST "
               "AST ADT NST NDT AEST AEDT ACST ACDT AWST NZST NZDT JST KST SGT HKT WIB WITA WIT PHT ICT SAST BRT "
               "ART CLT COT PET UYT").split()
@@ -187,8 +188,8 @@ def check_rule(e, body: dict) -> None:
             raise DetectRefused("`time_format` describes the `timestamp` group, which the pattern does not have")
         codes = set(re.findall(r"%(.)", fmt))
         if not codes <= TIME_CODES or "H" not in codes and "I" not in codes or "M" not in codes:
-            raise DetectRefused("`time_format` is a strptime format using only %Y %m %d %b %B %j %H %I %p %M %S "
-                                "%f %z, with at least the hour and minute (a two-digit year %y is not accepted)")
+            raise DetectRefused("`time_format` is a strptime format using only %Y %m %d %b %B %j %a %A %H %I %p %M "
+                                "%S %f %z, with at least the hour and minute (a two-digit year %y is not accepted)")
         if "I" in codes and "p" not in codes:
             raise DetectRefused("a 12-hour clock (%I) needs AM/PM (%p)")
         if codes & set("mbB") and "d" not in codes:
@@ -203,8 +204,11 @@ def check_rule(e, body: dict) -> None:
 
 
 def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
-    """Test a candidate rule on an item: does it read every sample, does a captured time parse,
-    and (second line of defence) is every stored line that is read today read as before?"""
+    """Test a candidate rule on an item. One item may hold several header formats with the same first
+    token shape, so a rule may read a subset of the samples (at least MIN_SUBSET); every sample it
+    matches must come out right (time parses, is plausible, zone captured), and (second line of
+    defence) every stored line that is read today must be read as before. Samples it does not match
+    are `remaining`: the next rule's work, or a human's."""
     check_rule(e, body)
     body = scoped(body, item)
     cand = _snap_with(e.snap, body)
@@ -212,15 +216,18 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
     ctx = {"default_tz": e.deployment_tz(), "now": e._clock(), "tz_names": e.settings.tz_names}
     samples = item["samples"]
     groups = set(rx.compile(body["test"]["pattern"]).groupindex)
-    timed = [s for s in samples if leads_with_time(s, ctx)]
+    matched = [s for s in samples if name in detect(cand, s).chain]
+    timed = [s for s in matched if leads_with_time(s, ctx)]
     if timed and "timestamp" not in groups:
-        raise DetectRefused(f"{len(timed)} of {len(samples)} sample lines start with a time, e.g. {timed[0][:60]!r}: "
-                            "capture it as `timestamp`, and add `time_format` if the engine cannot read it as it "
-                            "is; if it cannot be described, flag the item for a human")
-    target = {"lines": len(samples), "read": 0, "not_read": [], "bad_time": [], "first": None}
+        raise DetectRefused(f"{len(timed)} of the {len(matched)} sample lines it matches start with a time, e.g. "
+                            f"{timed[0][:60]!r}: capture it as `timestamp`, and add `time_format` if the engine "
+                            "cannot read it as it is; if it cannot be described, flag the item for a human")
+    target = {"lines": len(samples), "matched": len(matched), "read": 0, "bad": 0, "not_read": [], "bad_time": [],
+              "first": None}
     for s in samples:
         d = detect(cand, s)
         if name in d.chain and not weak(d) and d.payload is not None:
+            target["bad"] += 1            # undone below once the line comes out right
             ts = d.header.get("@timestamp")
             raw_ts = d.header.get("@timestamp_raw", ts)
             if raw_ts and "tz" not in groups and "%z" not in (body.get("time_format") or ""):
@@ -232,21 +239,23 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
             if ts is not None:
                 try:
                     t_ms = transforms.parse_timestamp(ts, {}, dict(ctx))
-                except (transforms.TransformError, ValueError):
+                except (transforms.TransformError, ValueError) as exc:
                     if len(target["bad_time"]) < 3:
-                        target["bad_time"].append(ts)
+                        target["bad_time"].append(f"{ts} ({str(exc)[:140]})")     # the reason tells the agent what to do
                     continue
                 if t_ms > ctx["now"] * 1000 + 86400 * 1000 or t_ms < ctx["now"] * 1000 - 20 * YEAR_MS:
                     if len(target["bad_time"]) < 3:
                         target["bad_time"].append(f"{raw_ts} (read as {t_ms}: more than a day in the future or "
                                                   f"20 years in the past)")
                     continue
+            target["bad"] -= 1
             target["read"] += 1
             if target["first"] is None:
                 target["first"] = {"line": s[:300], "chain": d.chain, "header": d.header, "app": d.app,
                                    "payload": d.payload[:200]}
         elif len(target["not_read"]) < 3:
             target["not_read"].append(s[:300])
+    target["remaining"] = len(samples) - len(matched)
     lines = stored_lines(e) if lines is None else lines
     regress, improved, examples = 0, Counter(), []
     for s in lines:
@@ -264,7 +273,7 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
     # likely a zone that is not in ZONE_NAMES (PKT, EAT, NPT...); refuse rather than drop it
     if "tz" not in groups and "%z" not in (body.get("time_format") or "") and target["read"]:
         words = set()
-        for s in samples:
+        for s in matched:
             d = detect(cand, s)
             raw_ts = d.header.get("@timestamp_raw", d.header.get("@timestamp"))
             m = re.match(r"^\s+([A-Z]{2,5})\b", s[s.find(raw_ts) + len(raw_ts):]) if raw_ts and raw_ts in s else None
@@ -272,11 +281,14 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
         if len(words) == 1 and None not in words:
             target["bad_time"].append(f"the same word {next(iter(words))!r} follows the time on every line: if it "
                                       f"is a zone, capture it as `tz`; if it is not, flag the item")
+            target["bad"] += target["read"]
             target["read"] = 0
-    ambiguous = _day_month_ambiguous(body, samples)
+    ambiguous = _day_month_ambiguous(body, matched)
     if ambiguous:
         target["ambiguous"] = ambiguous
-    ok = target["read"] == target["lines"] and target["lines"] > 0 and regress == 0 and not ambiguous
+    need = min(MIN_SUBSET, len(samples))
+    target["needed"] = need
+    ok = target["read"] >= need and target["bad"] == 0 and regress == 0 and not ambiguous
     # what saving would cost: groups of this source whose learned parser will not fit once the
     # header is read (a parser was written for the whole line); long-tail rules are carried over
     relearn = {"groups_with_rules": 0, "lines": 0, "stored_events_with_a_class": 0}
@@ -328,9 +340,11 @@ def apply(e, key: str, item: dict, body: dict, agent: str, note: str = "") -> di
     if not res["ok"]:
         why = []
         t = res["target"]
-        if t["read"] < t["lines"]:
-            why.append(f"it reads {t['read']} of {t['lines']} sample lines; not read: {t['not_read'][:2]}"
-                       + (f"; timestamps that do not parse: {t['bad_time']}" if t["bad_time"] else ""))
+        if t["bad"]:
+            why.append(f"it matches {t['bad']} sample lines but does not read them right: {t['bad_time']}")
+        if t["read"] < t["needed"]:
+            why.append(f"it reads {t['read']} of {t['lines']} sample lines; a rule must read at least "
+                       f"{t['needed']}; not read: {t['not_read'][:2]}")
         if t.get("ambiguous"):
             why.append(t["ambiguous"])
         if res["regressions"]:
@@ -347,9 +361,17 @@ def apply(e, key: str, item: dict, body: dict, agent: str, note: str = "") -> di
     e.reload()
     moved = reprocess(e, item["source"])
     carried = carry_over(e, learned, agent)
-    e.store.queue_done(QUEUE, key)
-    return {"saved": rule_id, "version": v, "scope": res["scope"], "newly_read": res["newly_read"],
-            "reprocessed": moved, "carried_over": carried}
+    left = [s for s in item["samples"] if weak(detect(e.snap, s))]
+    if left:              # other header formats in the same item: they stay, for the next rule or a human
+        e.store.reopen(QUEUE, key, {**item, "samples": left, "rules_saved": item.get("rules_saved", []) + [rule_id]})
+    else:
+        e.store.queue_done(QUEUE, key)
+    out = {"saved": rule_id, "version": v, "scope": res["scope"], "newly_read": res["newly_read"],
+           "reprocessed": moved, "carried_over": carried, "remaining": len(left)}
+    if left:
+        out["next"] = (f"{len(left)} sample lines of this item are still unread (another header format); "
+                       f"get_samples shows them: write the next rule, or flag them with the reason")
+    return out
 
 
 def _learned_before(e, src: str) -> list:

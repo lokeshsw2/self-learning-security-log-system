@@ -53,8 +53,15 @@ How to work
 2. Write the narrowest rule that reads these lines: describe the header's structure, never a
    host name, user or other value from one installation. Prefer a copy of the closest existing
    pattern with the one difference these lines need.
-3. Test it. The check refuses a rule that misses any sample line or whose timestamp does not
-   parse. `newly_read` shows the stored unread lines it would read, by the source they move to.
+3. Test it. Every sample line your rule matches must come out right (time parses and is
+   plausible, a written zone is captured); the check reports `matched`, `read`, `bad` and
+   `remaining`. `newly_read` shows the stored unread lines it would read, by the source they move to.
+   One item can hold several header formats whose first token looks alike (`11-23-2026 ...` and
+   `2026-11-13 ...` both start with digits and dashes). Then write one rule per format: a rule must
+   read at least 5 of the samples (all of them if there are fewer), and the lines it does not match
+   stay in the item. After a save, `remaining` says how many are left and `get_samples` shows them:
+   write the next rule, or, for lines that cannot be read safely (an unknown zone name, a day and
+   month that could be either way round), reply `FLAG:` with the reason; the rules already saved stay.
 4. When it is saved, the lines move to new groups and what was learned for their old groups is
    carried over by code where it still fits; the rest is learned again by the other agents.
 5. Save it, with a short note on what was different about these lines.

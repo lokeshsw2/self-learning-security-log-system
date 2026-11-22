@@ -7,7 +7,7 @@ import pytest
 from logparser import detection, registry
 from logparser.detect import detect
 from logparser.harness import Harness
-from logparser.tools import Tools
+from logparser.tools import Refused, Tools
 from tests.test_engine import feed, make
 from tests.test_harness import FakeClient
 
@@ -389,3 +389,73 @@ def test_trigger_sees_a_time_after_a_weekday():
     assert detection.HEADED.match("Fri Nov 13 09:50:43 2026 app-09 cupsd: job 39 printed")
     assert detection.HEADED.match("Fri, Nov 13 09:50:43 2026 host x")
     assert not detection.HEADED.match("Friday was fine")
+
+
+# --------------------------------------------------------------------- one item, several header formats
+def us12(i):
+    return f"11-{13 + i % 10:02d}-2026 {(i % 12) + 1:02d}:15:0{i % 10} PM app-0{i % 3} sshd[{100 + i}]: Failed password for u{i}"
+
+
+def att(i):
+    return f"2026-11-{13 + i % 10:02d} 09:{i % 60:02d}:31+0530 app-0{i % 3} squid[{200 + i}]: TCP_DENIED/403 10.0.0.{i}"
+
+
+def pkt(i):
+    return f"2026-11-{13 + i % 10:02d} 09:{i % 60:02d}:40 PKT app-0{i % 3} vsftpd[{300 + i}]: FAIL LOGIN: Client 10.0.1.{i}"
+
+
+R_US = {"name": "ai_us12", "order": 50, "type": "envelope", "app": ["app"], "time_format": "%m-%d-%Y %I:%M:%S %p",
+        "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d\d-\d\d-\d{4} \d\d:\d\d:\d\d [AP]M) " + HOST_APP}}
+R_ATT = {"name": "ai_att", "order": 50, "type": "envelope", "app": ["app"], "time_format": "%Y-%m-%d %H:%M:%S%z",
+         "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d[+-]\d{4}) " + HOST_APP}}
+R_PKT = {"name": "ai_pkt", "order": 50, "type": "envelope", "app": ["app"],
+         "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) (?P<tz>[A-Z]{2,5}) " + HOST_APP}}
+
+
+def mixed(tmp_path):
+    lines = [f(i) for i in range(20) for f in (us12, att, pkt)]
+    eng, items = queued(tmp_path, lines)
+    assert len(items) == 1 and items[0]["payload"]["shape"] == "0-0-0"      # three formats, one item
+    return eng, items[0]["key"], items[0]["payload"]
+
+
+def test_one_rule_per_format_in_a_mixed_item(tmp_path):
+    eng, key, item = mixed(tmp_path)
+    res = detection.evaluate(eng, item, R_US)
+    assert res["ok"] and res["target"]["read"] == res["target"]["matched"] and res["target"]["remaining"] > 0
+    out = Tools(eng, "harness:detection").save_detect(key, R_US)
+    assert out["remaining"] > 0 and "next" in out
+    item2 = eng.store.queue_items(detection.QUEUE)[0]["payload"]
+    assert item2["rules_saved"] == ["detect:ai_us12"] and not any(" PM " in s or " AM " in s for s in item2["samples"])
+    out = Tools(eng, "harness:detection").save_detect(key, R_ATT)
+    left = eng.store.queue_items(detection.QUEUE)[0]["payload"]["samples"]
+    assert out["remaining"] == len(left) and all(" PKT " in s for s in left)
+    with pytest.raises(Refused, match="human decides"):                    # PKT is in no table: flag it
+        Tools(eng, "harness:detection").save_detect(key, R_PKT)
+    t = detect(eng.snap, us12(3)).header["@timestamp"]
+    assert t.startswith("2026-11-16T16:15")                                # 04 PM -> 16h, month first
+
+
+def test_a_rule_must_read_enough_and_everything_it_matches(tmp_path):
+    eng, key, item = mixed(tmp_path)
+    narrow = {**R_US, "test": {"kind": "regex", "pattern": r"^(?P<timestamp>11-13-2026 \d\d:\d\d:\d\d [AP]M) " + HOST_APP}}
+    res = detection.evaluate(eng, item, narrow)
+    assert not res["ok"] and res["target"]["read"] < 5
+    both = {**R_ATT, "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\S* \S+ " + HOST_APP}}
+    res = detection.evaluate(eng, item, {**both, "time_format": None} if False else {k: v for k, v in both.items() if k != "time_format"})
+    assert not res["ok"] and res["target"]["bad"] > 0                       # matches PKT/+0530 lines but drops their zone
+
+
+def test_harness_writes_several_rules_then_flags_the_rest(tmp_path):
+    eng, key, item = mixed(tmp_path)
+    fake = FakeClient([
+        {"tool": "save_detect", "input": {"rule": R_US}},
+        {"tool": "save_detect", "input": {"rule": R_ATT}},
+        {"text": "FLAG: PKT is not a zone the deployment defines; a human decides"},
+    ])
+    res = Harness(eng, client=fake).run_queue("detection")
+    assert res == [{"key": key, "saved": True, "reason": None}]
+    it = eng.store.q("SELECT status, payload FROM queue WHERE name=? AND key=?", (detection.QUEUE, key))[0]
+    assert it["status"] == "flagged" and "PKT" in json.loads(it["payload"])["flag_reason"]
+    assert detection.scan(eng)["queued"] == 0                              # flagged: nobody pays to ask again
+    assert len(fake.requests) == 3
