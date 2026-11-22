@@ -37,6 +37,7 @@ class KafkaConfig:
     unparsed_topic: str = "logs.unparsed"
     parsed_topic: str = "logs.parsed"
     replay_topic: str = "logs.replay"     # kept lines re-sent to Logstash when their format is first deployed
+    failed_topic: str = "logs.ls_failed"  # lines a deployed Logstash pipeline failed on (drift signal); "" = off
     group_id: str = "lp-learner"
     logstash_group: str = "lp-logstash"   # the deployed pipelines' consumer group
     batch_max: int = 2000

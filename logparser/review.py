@@ -164,7 +164,24 @@ def resolve(engine, name: str, key: str, action: str, author: str = "reviewer") 
 
 
 # ---------------------------------------------------------------- drift
-def drift(engine, recent_batches: int = 50) -> dict:
+def logstash_failures(clickhouse: tuple, hours: int = 24) -> list:
+    """Lines deployed Logstash pipelines failed on, per pipeline and reason (from <db>.ls_failures)."""
+    import re as _re
+    import urllib.request
+    url, db = clickhouse
+    if not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", db):
+        return []
+    q = (f"SELECT pipeline, reason, count() n, any(message) example, max(at) last FROM {db}.ls_failures "
+         f"WHERE at > now() - INTERVAL {int(hours)} HOUR GROUP BY pipeline, reason ORDER BY n DESC LIMIT 50 "
+         f"FORMAT JSONEachRow")
+    try:
+        rows = urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/", data=q.encode()), timeout=15)
+        return [json.loads(l) for l in rows.read().decode().splitlines()]
+    except Exception:
+        return []
+
+
+def drift(engine, recent_batches: int = 50, clickhouse: tuple | None = None) -> dict:
     """Signs that a known format changed:
     - rule failing: groups whose Variant A rule started failing on new lines (engine status `drift`)
     - new key sets: structured groups that absorbed new key combinations (drift-linked signatures)
@@ -194,6 +211,7 @@ def drift(engine, recent_batches: int = 50) -> dict:
         "went_quiet": [row(g, last_batch=g["last_batch"]) for g in live
                        if g["signature"] in deployed and now - (g["last_batch"] or 0) >= recent_batches],
         "last_lsaudit": e.store.get_state("last_lsaudit", None),
+        "logstash_failures": logstash_failures(clickhouse) if clickhouse else [],
     }
 
 

@@ -28,7 +28,8 @@ def main() -> None:
             print("created topics:", made, flush=True)
     if cfg.clickhouse.ingest:
         from .clickhouse import ensure_ingest
-        ensure_ingest(cfg.clickhouse.url, cfg.clickhouse.database, cfg.kafka.bootstrap, cfg.kafka.parsed_topic)
+        ensure_ingest(cfg.clickhouse.url, cfg.clickhouse.database, cfg.kafka.bootstrap, cfg.kafka.parsed_topic,
+                      failed_topic=cfg.kafka.failed_topic or None)
     svc = LearnerService(cfg)
     deployer = None
     if cfg.logstash.deploy:                     # both variants: verify, then swap in and replay

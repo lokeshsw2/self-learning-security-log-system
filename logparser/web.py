@@ -406,7 +406,7 @@ class App:
     def review_drift(self) -> dict:
         from . import review
         with self.lock:
-            out = review.drift(self.eng)
+            out = review.drift(self.eng, clickhouse=(self.ch_url, self.ch_db) if getattr(self, "ch_db", None) else None)
         out["lsaudit_run"] = {k: v for k, v in (self.lsaudit_run or {}).items() if not k.startswith("_")} or None
         return out
 

@@ -271,6 +271,7 @@ export interface Drift {
   new_key_sets: DriftRow[]
   new_format_known_source: DriftRow[]
   went_quiet: DriftRow[]
+  logstash_failures: { pipeline: string; reason: string; n: number; example: string; last: string }[]
   last_lsaudit: (LsAuditResult & { failing: { signature: string; checks: string[] }[] }) | null
   lsaudit_run: { running: boolean; started: number; finished?: number; result: LsAuditResult | null; error: string | null } | null
 }

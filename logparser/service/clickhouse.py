@@ -42,7 +42,7 @@ def _q(s: str) -> str:
     return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def statements(db: str, bootstrap: str, topic: str, group: str) -> list:
+def statements(db: str, bootstrap: str, topic: str, group: str, failed_topic: str | None = None) -> list:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", db):
         raise ValueError(f"clickhouse database name {db!r}")
     with open(os.path.join(ROOT, "deploy", "clickhouse", "schema.sql")) as fh:
@@ -58,12 +58,25 @@ def statements(db: str, bootstrap: str, topic: str, group: str) -> list:
                     for c, _ in QUEUE_COLUMNS)
     out.append(f"CREATE MATERIALIZED VIEW IF NOT EXISTS {db}.parsed_mv TO {db}.ocsf_events AS SELECT {sel} "
                f"FROM {db}.parsed_queue")
+    if failed_topic:      # lines a deployed Logstash pipeline failed on, for the drift report
+        out.append(f"CREATE TABLE IF NOT EXISTS {db}.ls_failures (at DateTime64(3, 'UTC'), pipeline LowCardinality(String), "
+                   f"reason LowCardinality(String), lp_group_id String, message String) ENGINE = MergeTree "
+                   f"ORDER BY (pipeline, at) TTL toDateTime(at) + INTERVAL 30 DAY")
+        out.append(f"CREATE TABLE IF NOT EXISTS {db}.ls_failures_queue (at String, pipeline String, reason String, "
+                   f"lp_group_id String, message String) ENGINE = Kafka SETTINGS kafka_broker_list = {_q(bootstrap)}, "
+                   f"kafka_topic_list = {_q(failed_topic)}, kafka_group_name = {_q(group + '-failures')}, "
+                   f"kafka_format = 'JSONEachRow', kafka_num_consumers = 1, kafka_skip_broken_messages = 100, "
+                   f"input_format_skip_unknown_fields = 1")
+        out.append(f"CREATE MATERIALIZED VIEW IF NOT EXISTS {db}.ls_failures_mv TO {db}.ls_failures AS SELECT "
+                   f"parseDateTime64BestEffortOrZero(at, 3, 'UTC') AS at, pipeline, reason, lp_group_id, message "
+                   f"FROM {db}.ls_failures_queue")
     return out
 
 
-def ensure_ingest(url: str, db: str, bootstrap: str, topic: str, group: str = "clickhouse-ocsf") -> int:
+def ensure_ingest(url: str, db: str, bootstrap: str, topic: str, group: str = "clickhouse-ocsf",
+                  failed_topic: str | None = None) -> int:
     """Create the database, the event tables and the topic ingestion if missing. Returns statements run."""
-    sts = statements(db, bootstrap, topic, group)
+    sts = statements(db, bootstrap, topic, group, failed_topic)
     for s in sts:
         _post(url, s)
     return len(sts)

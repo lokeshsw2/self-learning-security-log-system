@@ -178,7 +178,7 @@ class Deployer:
             return entry
         k = self.cfg.kafka
         io = L.kafka_io(k.bootstrap, [k.unparsed_topic, k.replay_topic], k.logstash_group, k.parsed_topic, ROOT,
-                        extra=k.client_extra())
+                        extra=k.client_extra(), failed_topic=k.failed_topic or None)
         staging = live + ".next"
         shutil.rmtree(staging, ignore_errors=True)
         L.write_set(gen, staging, root=ROOT, io=io, workers=self.cfg.logstash.workers,

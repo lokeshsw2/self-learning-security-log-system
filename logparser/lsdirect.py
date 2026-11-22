@@ -355,6 +355,17 @@ def judge(schema, det, raw: str, out: dict, body: dict) -> list:
             probs.append(f"value: event `{p}` = {v!r} is not in this line")
     sb = out.get("sb") or {}
     fields = {k: v for k, v in (sb.get("f") or {}).items() if isinstance(v, (str, int, float))}
+    if sb.get("f") is None:                # an event read back (ClickHouse, deploy check): no parsed fields, so
+        for m in body.get("map") or []:    # check that every attribute the filter always sets is in the event
+            if m.get("when") or "fallback" in m:
+                continue
+            cur = ev
+            for part in m["to"].split("."):
+                cur = cur[0] if isinstance(cur, list) and cur else cur
+                cur = cur.get(part) if isinstance(cur, dict) else None
+            if cur in (None, "", [], {}):
+                probs.append(f"map: the event has no `{m['to']}`, which the filter sets from `{m.get('from')}` on every "
+                             f"line; the field is probably missing or renamed in the line")
     if sb.get("f") is not None:            # the sandbox shows the parsed fields; the deploy check does not
         allf = sb.get("f") or {}
 

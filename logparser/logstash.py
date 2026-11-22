@@ -1150,7 +1150,8 @@ def _read_sink_template(root: str, name: str = "output-clickhouse.conf") -> str:
         return fh.read()
 
 
-def kafka_io(bootstrap: str, topics: list, group_id: str, parsed_topic: str, root: str, extra: dict | None = None):
+def kafka_io(bootstrap: str, topics: list, group_id: str, parsed_topic: str, root: str, extra: dict | None = None,
+             failed_topic: str | None = None):
     """Input and sink for the learning service: read the unparsed (and replay) topics, write each parsed
     OCSF event, flattened to the ClickHouse columns, as JSON to the parsed topic. Lines no compiled group
     parses are dropped here: the learner reads the unparsed topic itself."""
@@ -1169,6 +1170,17 @@ def kafka_io(bootstrap: str, topics: list, group_id: str, parsed_topic: str, roo
             "event.set(\"ingest_id\", \"logstash\")' }\n  }\n}\n"
             f"output {{\n  if !(\"lp_unparsed\" in [tags]) {{\n    kafka {{\n      bootstrap_servers => {q(bootstrap)}\n"
             f"      topic_id => {q(parsed_topic)}\n      codec => json\n      compression_type => \"lz4\"{ex.replace(chr(10), chr(10) + '    ')}\n    }}\n  }}\n}}\n")
+    if failed_topic:
+        # lines a deployed format's pipeline failed on (parse or time): the drift signal on the Logstash side.
+        # Lines with no route at all are not sent: the learner reads every unparsed line itself.
+        sink += ("filter {\n  if \"lp_unparsed\" in [tags] and [lp][pipeline] {\n    ruby { code => '"
+                 "event.set(\"[@metadata][fail]\", {\"message\" => event.get(\"message\").to_s[0, 8000], "
+                 "\"reason\" => event.get(\"[lp][reason]\").to_s, \"pipeline\" => event.get(\"[lp][pipeline]\").to_s, "
+                 "\"lp_group_id\" => event.get(\"[lp][group_id]\").to_s, "
+                 "\"at\" => Time.now.utc.strftime(\"%Y-%m-%d %H:%M:%S.%L\")}.to_json)' }\n  }\n}\n"
+                 f"output {{\n  if \"lp_unparsed\" in [tags] and [lp][pipeline] {{\n    kafka {{\n"
+                 f"      bootstrap_servers => {q(bootstrap)}\n      topic_id => {q(failed_topic)}\n"
+                 f"      codec => plain {{ format => \"%{{[@metadata][fail]}}\" }}{ex.replace(chr(10), chr(10) + '    ')}\n    }}\n  }}\n}}\n")
     return inp, sink
 
 
@@ -1205,7 +1217,7 @@ def write_set(gen: Generated, out_dir: str, *, root: str, test: dict | None = No
     for s in slugs:
         files[s + ".conf"] = (f'input {{ pipeline {{ address => "{s}" }} }}\nfilter {{\n{ind(gen.files[s + ".filter"], 2)}\n'
                               '  if ![lp][group_id] {\n    if ![lp][reason] {\n      mutate { add_field => { "[lp][reason]" => "no_group_matched" } }\n    }\n'
-                              '    mutate { add_tag => ["lp_unparsed"] remove_field => ["[ocsf]"] }\n  }\n}\n'
+                              f'    mutate {{ add_tag => ["lp_unparsed"] remove_field => ["[ocsf]"] add_field => {{ "[lp][pipeline]" => "{s}" }} }}\n  }}\n}}\n'
                               'output { pipeline { send_to => ["sink"] } }\n')
     if test:
         files["sink.conf"] = ('input { pipeline { address => "sink" } }\n'

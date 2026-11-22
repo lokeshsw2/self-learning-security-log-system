@@ -440,3 +440,28 @@ def test_learn_audits_variant_b_saves_and_gives_a_fix_round(ssh):
     assert rep["ls-audit 2"]["groups_failing"] == 0 and len(sb.calls) == 4
     feedback = json.loads(json.dumps(fake.requests[1]["messages"][0]["content"]))
     assert "reported_by" in feedback and "audit" in feedback        # the fix round saw the audit's findings
+
+
+def test_read_back_events_missing_an_always_mapped_field_fail():
+    """A renamed key does not fail a filter; the event just loses the field. Read-back checks catch that."""
+    ev = {k: v for k, v in GOOD_EVENT.items() if k != "src_endpoint"}
+    probs = D.judge(SCHEMA, _det(), SSH[0], {"ocsf": ev, "sb": {"t": True, "f": None}}, RULE)
+    assert any("no `src_endpoint.ip`" in p for p in probs)
+    optional = {**RULE, "map": [dict(m, when={"field": m["from"], "exists": True}) if m.get("from") == "src_ip" else m
+                                for m in RULE["map"] if m.get("to") != "src_endpoint.port"]}
+    assert not any("src_endpoint" in p for p in
+                   D.judge(SCHEMA, _det(), SSH[0], {"ocsf": ev, "sb": {"t": True, "f": None}}, optional))
+
+
+def test_failed_lines_of_deployed_pipelines_get_their_own_topic():
+    from logparser.logstash import kafka_io
+    from logparser.service.clickhouse import statements
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _, sink = kafka_io("b:1", ["logs.unparsed"], "g", "logs.parsed", root, failed_topic="logs.ls_failed")
+    assert 'topic_id => "logs.ls_failed"' in sink and '"lp_unparsed" in [tags] and [lp][pipeline]' in sink
+    _, plain = kafka_io("b:1", ["logs.unparsed"], "g", "logs.parsed", root)
+    assert "ls_failed" not in plain
+    sts = statements("lpsvc", "b:1", "logs.parsed", "g", "logs.ls_failed")
+    assert any("lpsvc.ls_failures " in s and "MergeTree" in s for s in sts)
+    assert any("kafka_topic_list = 'logs.ls_failed'" in s for s in sts)
+    assert not any("ls_failures" in s for s in statements("lpsvc", "b:1", "logs.parsed", "g"))

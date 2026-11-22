@@ -73,7 +73,7 @@ def audit_group(e, sandbox, sig: str, limit: int = 200, clickhouse: tuple | None
     if clickhouse and re.fullmatch(r"[0-9a-f]{8,64}", sig) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", clickhouse[1]):
         url, db = clickhouse
         q = (f"SELECT message, event_json FROM {db}.ocsf_events WHERE lp_group_id = '{sig}' "
-             f"ORDER BY time DESC LIMIT {int(limit)} FORMAT JSONEachRow")
+             f"ORDER BY ingested_at DESC LIMIT {int(limit)} FORMAT JSONEachRow")   # newest arrivals, not newest event times
         try:
             rows = urllib.request.urlopen(urllib.request.Request(url.rstrip("/") + "/", data=q.encode()),
                                           timeout=30).read().decode().splitlines()

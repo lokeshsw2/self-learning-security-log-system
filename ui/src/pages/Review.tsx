@@ -188,6 +188,36 @@ function Health({ d, reload }: { d: Drift; reload: () => void }) {
           )}
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Lines the live Logstash failed on (24 h) <Badge variant="secondary" className="ml-1">{d.logstash_failures.length}</Badge></CardTitle>
+          <CardDescription>Lines that reached a deployed format's pipeline and failed there: a format changed under a deployed filter. Lines of formats not deployed yet are not counted.</CardDescription>
+        </CardHeader>
+        {d.logstash_failures.length > 0 && (
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pipeline</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead className="text-right">Lines</TableHead>
+                  <TableHead>Example</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {d.logstash_failures.map((f) => (
+                  <TableRow key={f.pipeline + f.reason}>
+                    <TableCell><Mono>{f.pipeline}</Mono></TableCell>
+                    <TableCell>{f.reason}</TableCell>
+                    <TableCell className="text-right tabular-nums">{fmt(f.n)}</TableCell>
+                    <TableCell className="max-w-xl whitespace-normal"><RawLine text={f.example.slice(0, 300)} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        )}
+      </Card>
       <DriftTable title="Rules that started failing" hint="Variant A groups whose parser fails on new lines; the parser writer has them again."
         rows={d.rule_failing} extra={(r) => `${fmt(r.failures)} failures`} />
       <DriftTable title="New formats from a known source" hint="Groups first seen recently from a source whose other formats are already parsed: often a product update."

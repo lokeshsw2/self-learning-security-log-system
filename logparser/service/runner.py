@@ -88,7 +88,7 @@ def ensure_topics(cfg: ServiceConfig) -> list:
     admin = AdminClient({"bootstrap.servers": c.bootstrap, **c.client_extra()})
     have = set(admin.list_topics(timeout=10).topics)
     new = [NewTopic(t, num_partitions=c.partitions, replication_factor=1)
-           for t in (c.unparsed_topic, c.parsed_topic, c.replay_topic) if t not in have]
+           for t in (c.unparsed_topic, c.parsed_topic, c.replay_topic, c.failed_topic) if t and t not in have]
     for t, f in (admin.create_topics(new).items() if new else []):
         f.result()
     return [t.topic for t in new]
