@@ -3,9 +3,14 @@
 An envelope check (a syslog header, a vendor tag) strips its header and
 detection runs again on the payload, so hybrids such as
 syslog -> CEF or syslog -> JSON resolve to a chain of names.
+
+Rules the detection agent added (names starting `ai_`) are fallbacks: they are tried only on
+a line that no other rule reads at all. So an added rule can never change how a line that is
+read today is read, whether or not that line was ever stored.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from . import formats, rx
@@ -91,14 +96,41 @@ def _test(test: dict, text: str, snap: Snapshot):
     return False, None, None
 
 
+AI_PREFIX = "ai_"
+
+
+def shape(line: str) -> str:
+    """The shape of a line's first token: digits -> 0, letters -> a ("2026-09-20T14:11:02" -> "0-0-0a0:0:0")."""
+    tok = line.lstrip().split(" ", 1)[0][:48]
+    return re.sub(r"[A-Za-z]+", "a", re.sub(r"\d+", "0", tok))
+
+
 def detect(snap: Snapshot, text: str) -> Detection:
+    det = _detect(snap, text, set(), skip_ai=True)
+    if det.chain == ["unstructured"]:
+        sh = None
+        for chk in snap.detect:                      # added rules: only for lines nothing else reads
+            if not chk["name"].startswith(AI_PREFIX):
+                continue
+            if chk.get("when_shape"):                # and only for the line shape they were written for
+                sh = sh or shape(text)
+                if sh not in chk["when_shape"]:
+                    continue
+            ok, caps, _ = _test(chk["test"], text, snap)
+            if ok and caps is not None and caps.get("payload") is not None:
+                return _detect(snap, text, set(), skip_ai=True, first=chk)
+    return det
+
+
+def _detect(snap: Snapshot, text: str, used: set, skip_ai: bool, first: dict | None = None) -> Detection:
     det = Detection(payload=text)
-    used: set = set()
     for _ in range(MAX_DEPTH + 1):
         advanced = False
-        for chk in snap.detect:
+        for chk in ([first] if first is not None and not det.chain else snap.detect):
             name = chk["name"]
             if name in used or chk["test"]["kind"] == "binary":
+                continue
+            if skip_ai and name.startswith(AI_PREFIX) and chk is not first:
                 continue
             ok, caps, extra = _test(chk["test"], det.payload, snap)
             if not ok:

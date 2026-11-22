@@ -1079,6 +1079,9 @@ class Tools:
                   "pattern": b["test"].get("pattern", b["test"]["kind"])[:400], "app": b.get("app", [])}
                  for b in self.e.snap.detect if b["type"] == "envelope"]
         out = {"notice": NOTICE, "item": item, "source": p["source"], "shape": p["shape"], "lines": p["count"],
+               "not_handled_well": p.get("not_handled"),
+               "scope": "your rule is tried only on lines no other rule reads, whose first token has this shape; "
+                        "it takes all of them, so the samples come from all of them",
                "samples": [{"line": _clip(s)[:400], "read_today_as": detect(self.e.snap, s).bucket}
                            for s in p["samples"]],
                "existing_envelope_rules": rules}
@@ -1089,7 +1092,7 @@ class Tools:
         from . import detection
         p = self._detection_item(item)
         try:
-            res = detection.evaluate(self.e, p["samples"], rule)
+            res = detection.evaluate(self.e, p, rule)
         except detection.DetectRefused as exc:
             res = {"ok": False, "error": str(exc)}
         self._log("test_detect", item, res.get("ok", False), str(res)[:300])
@@ -1099,7 +1102,7 @@ class Tools:
         from . import detection
         p = self._detection_item(item)
         try:
-            res = detection.apply(self.e, item, p["samples"], rule, self.agent, note)
+            res = detection.apply(self.e, item, p, rule, self.agent, note)
         except detection.DetectRefused as exc:
             raise Refused(str(exc)) from None
         self._log("save_detect", item, True, str(res)[:300])

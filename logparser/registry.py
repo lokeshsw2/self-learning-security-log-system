@@ -59,7 +59,7 @@ SCHEMAS: dict[str, dict] = {
                "properties": {
                    "order": {"type": "number"}, "type": {"enum": ["envelope", "format"]},
                    "name": {"type": "string", "pattern": "^[a-z0-9_]+$"}, "format": {"type": "string"},
-                   "app": STR_LIST, "payload_fallback": {"type": "string"}, "header_patterns": {"type": "object", "additionalProperties": STR_LIST},
+                   "app": STR_LIST, "payload_fallback": {"type": "string"}, "when_shape": STR_LIST, "header_patterns": {"type": "object", "additionalProperties": STR_LIST},
                    "test": {"type": "object", "required": ["kind"], "additionalProperties": False, "properties": {
                        "kind": {"enum": ["regex", "prefix", "json", "xml", "kv", "delimited", "binary", "always",
                                          "json_wrap"]},
