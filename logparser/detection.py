@@ -232,7 +232,7 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
             if ts is not None:
                 try:
                     t_ms = transforms.parse_timestamp(ts, {}, dict(ctx))
-                except transforms.TransformError:
+                except (transforms.TransformError, ValueError):
                     if len(target["bad_time"]) < 3:
                         target["bad_time"].append(ts)
                     continue
@@ -260,6 +260,19 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
         regress += 1
         if len(examples) < 4:
             examples.append({"line": s[:240], "before": old.bucket, "after": new.bucket})
+    # a capital word right after the time on every sample, always the same and not captured: most
+    # likely a zone that is not in ZONE_NAMES (PKT, EAT, NPT...); refuse rather than drop it
+    if "tz" not in groups and "%z" not in (body.get("time_format") or "") and target["read"]:
+        words = set()
+        for s in samples:
+            d = detect(cand, s)
+            raw_ts = d.header.get("@timestamp_raw", d.header.get("@timestamp"))
+            m = re.match(r"^\s+([A-Z]{2,5})\b", s[s.find(raw_ts) + len(raw_ts):]) if raw_ts and raw_ts in s else None
+            words.add(m.group(1) if m else None)
+        if len(words) == 1 and None not in words:
+            target["bad_time"].append(f"the same word {next(iter(words))!r} follows the time on every line: if it "
+                                      f"is a zone, capture it as `tz`; if it is not, flag the item")
+            target["read"] = 0
     ambiguous = _day_month_ambiguous(body, samples)
     if ambiguous:
         target["ambiguous"] = ambiguous

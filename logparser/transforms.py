@@ -32,18 +32,28 @@ class TransformError(ValueError):
     pass
 
 
-def _tz(name: str | None, ctx: dict):
+# zone names that mean one fixed offset when written in a line (standard time, as the name says)
+FIXED_NAMES = {"UCT": "+00:00", "WET": "+00:00", "CET": "+01:00", "MET": "+01:00", "EET": "+02:00",
+               "EST": "-05:00", "MST": "-07:00", "HST": "-10:00"}
+
+
+def _tz(name: str | None, ctx: dict, from_line: bool = False):
+    """A zone from a line (`from_line`: the deployment's tz_names table, then FIXED_NAMES, else refused,
+    because a name such as IST or CST means different zones) or from configuration (args.tz,
+    default_tz: the table, then the zone database, e.g. Europe/Paris or CET with daylight saving)."""
     name = name or ctx.get("default_tz") or "UTC"
     if name in ("Z", "z", "UTC", "GMT"):
         return dt.timezone.utc
-    if _ZONE_NAME.match(name):           # a zone name: what the deployment's table says it means first
-        off = (ctx.get("tz_names") or {}).get(name)
+    if _ZONE_NAME.match(name):
+        off = (ctx.get("tz_names") or {}).get(name) or (FIXED_NAMES.get(name) if from_line else None)
         if off is None:
-            try:
-                return ZoneInfo(name)    # a name the zone database defines (CET, EST, MST...)
-            except Exception:
+            if from_line:
                 raise TransformError(f"zone name {name} is not in the tz_names setting; a human decides what "
-                                     f"it means") from None
+                                     f"it means")
+            try:
+                return ZoneInfo(name)
+            except Exception:
+                raise TransformError(f"unknown time zone: {name}") from None
         name = off
     m = _OFFSET.match(name)
     if m:
@@ -81,7 +91,17 @@ def _year(month: int, day: int, ctx: dict) -> int:
 
 
 def parse_timestamp(value, args: dict, ctx: dict):
-    """Any common textual or epoch timestamp -> epoch milliseconds (OCSF timestamp_t)."""
+    """Any common textual or epoch timestamp -> epoch milliseconds (OCSF timestamp_t). A date or time
+    that does not exist (month 13, hour 25) is a TransformError like any other unreadable time."""
+    try:
+        return _parse_timestamp(value, args, ctx)
+    except (ValueError, OverflowError) as exc:
+        if isinstance(exc, TransformError):
+            raise
+        raise TransformError(f"not a real date or time: {str(value)[:60]} ({exc})") from None
+
+
+def _parse_timestamp(value, args: dict, ctx: dict):
     s = str(value).strip().strip("[]")
     if not s:
         return None
@@ -112,7 +132,7 @@ def parse_timestamp(value, args: dict, ctx: dict):
         d = dt.datetime(int(y), int(mo), int(da), int(h), int(mi), int(se), _frac_us(frac))
     elif tod:
         h, mi, se, frac, off = tod.groups()
-        zone = _tz(off or tzname, ctx)
+        zone = _tz(off, ctx, from_line=True) if off else _tz(tzname, ctx)
         now = dt.datetime.fromtimestamp(ctx.get("now", 0) or dt.datetime.now().timestamp(), zone)
         d = now.replace(hour=int(h), minute=int(mi), second=int(se), microsecond=_frac_us(frac))
         if d.timestamp() > now.timestamp() + 3600:   # just before midnight, read just after it
@@ -145,7 +165,7 @@ def parse_timestamp(value, args: dict, ctx: dict):
                     raise TransformError(f"unparseable timestamp: {s[:60]}")
                 d = dt.datetime(int(y), MONTHS[mon.lower()], int(da), int(h), int(mi), int(se), _frac_us(frac))
     if off:
-        d = d.replace(tzinfo=_tz(off, ctx))
+        d = d.replace(tzinfo=_tz(off, ctx, from_line=True))
     else:
         _flag(ctx, "tz_assumed")
         d = d.replace(tzinfo=_tz(tzname, ctx))

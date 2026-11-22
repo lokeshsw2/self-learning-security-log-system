@@ -715,6 +715,8 @@ class Compiler:
         if kind == "distributor":
             det = {}
             for chk in snap.detect:
+                if chk["name"].startswith("ai_"):
+                    continue
                 c = json.loads(json.dumps(chk))
                 if c["test"]["kind"] == "regex":
                     c["test"]["pattern"] = re2_to_onig(c["test"]["pattern"])
@@ -766,10 +768,9 @@ class Compiler:
 
     # ---------------------------------------------------------- distributor filter
     def distributor_filter(self, routes: dict, roots: list) -> str:
-        added = [c["name"] for c in self.snap.detect if c["name"].startswith("ai_")]
-        if added:
-            raise Unsupported(f"detection rules added by the agent ({', '.join(added[:5])}) are fallbacks scoped "
-                              f"by line shape, with time_format/tz; the Logstash export does not reproduce that")
+        # detection rules added by the agent are fallbacks scoped by line shape, with time_format/tz: the
+        # export does not reproduce that, so it leaves them out (their lines stay unread in Logstash) and says so
+        self.not_exported = [c["name"] for c in self.snap.detect if c["name"].startswith("ai_")]
         snap = self.snap
         tbl = self.tables("distributor", roots)
         T = "T_dist"
@@ -778,6 +779,8 @@ class Compiler:
              f'mutate {{ copy => {{ "message" => "{S}[payload]" }} }}']
         for lvl in range(5):
             for chk in snap.detect:
+                if chk["name"].startswith("ai_"):
+                    continue
                 t = chk["test"]
                 kind = t["kind"]
                 if kind == "binary":
@@ -1062,7 +1065,8 @@ class Compiler:
             srcs[slug] = ftxt
         dist = self.distributor_filter(routes, all_roots)
         stats = {"sources": len(srcs), "roots": len(all_roots),
-                 "leaves": sum(1 for l in self.leaves.values() if l.included)}
+                 "leaves": sum(1 for l in self.leaves.values() if l.included),
+                 "agent_detection_rules_not_exported": getattr(self, "not_exported", [])}
         return Generated({"distributor.filter": dist, **{f"src_{s}.filter": t for s, t in srcs.items()},
                           **{f"tables_{k}.json": v for k, v in self.tables_out.items()}},
                          ["distributor"] + [f"src_{s}" for s in sorted(srcs)] + ["sink"], self.leaves, self.roots, stats)

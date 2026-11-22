@@ -355,13 +355,31 @@ def test_zone_database_names_work_again_and_durations_are_not_flagged():
     assert not checks.problems(det, {"duration": "01:30:00"}, {"time": 1}, ["time_from_ingest"], {})
 
 
-def test_export_refuses_agent_detection_rules(tmp_path):
+def test_export_leaves_out_agent_detection_rules_and_says_so(tmp_path):
     from logparser import logstash
     eng = setup(tmp_path)
     registry.save_rule(eng.store, "detect:ai_x", {**GOOD, "name": "ai_x"}, {"created_by": "harness:detection"})
     eng.reload()
-    comp = logstash.Compiler(eng) if hasattr(logstash, "Compiler") else None
-    if comp is None:
-        pytest.skip("no compiler class")
-    with pytest.raises(logstash.Unsupported, match="added by the agent"):
-        comp.distributor_filter({}, [])
+    comp = logstash.Compiler(eng)
+    text = comp.distributor_filter({}, [])
+    assert comp.not_exported == ["ai_x"] and "ai_x" not in text
+
+
+def test_zone_names_in_lines_are_fixed_offsets_and_bad_dates_refuse(tmp_path):
+    from logparser import transforms
+    assert transforms.parse_timestamp("2026-07-01 12:00:00 CET", {}, {}) == 1782903600000      # 11:00Z, not 10:00Z
+    for bad in ("2026-07-01 12:00:00 GB", "2026-07-01 12:00:00 PRC"):
+        with pytest.raises(transforms.TransformError):
+            transforms.parse_timestamp(bad, {}, {})
+    for bad in ("2026-13-45 10:00:00", "T25:00:00"):
+        with pytest.raises(transforms.TransformError, match="not a real date"):
+            transforms.parse_timestamp(bad, {}, {"now": LATER})
+
+
+def test_constant_capital_word_after_the_time_is_refused(tmp_path):
+    lines = [f"2026-11-22 10:{i % 60:02d}:39 PKT db-0{i % 3} mysqld[{400 + i}]: login ok" for i in range(25)]
+    eng, items = queued(tmp_path, lines)
+    rule = {"name": "ai_pkt", "order": 50, "type": "envelope", "app": ["app"],
+            "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) [A-Z]{2,5} " + HOST_APP}}
+    res = detection.evaluate(eng, items[0]["payload"], rule)
+    assert not res["ok"] and "'PKT'" in res["target"]["bad_time"][-1]
