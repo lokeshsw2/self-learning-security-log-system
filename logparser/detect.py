@@ -10,6 +10,7 @@ read today is read, whether or not that line was ever stored.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import re
 from dataclasses import dataclass, field
 
@@ -36,6 +37,27 @@ class Detection:
 
 def _clean_app(app: str) -> str:
     return app.strip()[:80]
+
+
+_DATE_CODES = ("%d", "%m", "%b", "%B", "%j")
+
+
+def normal_time(raw: str, fmt: str) -> str | None:
+    """A time read with the rule's `time_format`, written the way the time parser reads everything:
+    "2026-11-22T10:15:03.456000" (with a date), "10:15:03.456000" (time of day), offset if the format
+    has %z. None when the text does not fit the format."""
+    try:
+        d = _dt.datetime.strptime(raw, fmt)
+    except ValueError:
+        return None
+    out = d.strftime("%Y-%m-%dT%H:%M:%S" if any(c in fmt for c in _DATE_CODES) else "%H:%M:%S")
+    if d.microsecond:
+        out += f".{d.microsecond:06d}"
+    if d.tzinfo is not None:
+        off = d.utcoffset()
+        mins = int(off.total_seconds() // 60)
+        out += f"{'+' if mins >= 0 else '-'}{abs(mins) // 60:02d}:{abs(mins) % 60:02d}"
+    return out
 
 
 def _test(test: dict, text: str, snap: Snapshot):
@@ -100,8 +122,13 @@ AI_PREFIX = "ai_"
 
 
 def shape(line: str) -> str:
-    """The shape of a line's first token: digits -> 0, letters -> a ("2026-09-20T14:11:02" -> "0-0-0a0:0:0")."""
+    """The shape of a line's first token: digits -> 0, letters -> a ("2026-09-20T14:11:02" -> "0-0-0a0:0:0").
+    In a header with no spaces ("1795322103123|edge-fw-02|vpnd|...") only the first field counts, with
+    its delimiter, so a varying host or program name does not split one format into several shapes."""
     tok = line.lstrip().split(" ", 1)[0][:48]
+    cut = min((i for i in (tok.find("|"), tok.find(";")) if i >= 0), default=-1)
+    if cut >= 0:
+        tok = tok[:cut + 1]
     return re.sub(r"[A-Za-z]+", "a", re.sub(r"\d+", "0", tok))
 
 
@@ -136,6 +163,12 @@ def _detect(snap: Snapshot, text: str, used: set, skip_ai: bool, first: dict | N
             if not ok:
                 continue
             caps = caps or {}
+            if caps.get("timestamp") and chk.get("time_format"):
+                norm = normal_time(caps["timestamp"], chk["time_format"])
+                if norm is not None:
+                    caps["timestamp_raw"], caps["timestamp"] = caps["timestamp"], norm
+            if caps.get("timestamp") and caps.get("tz"):          # a zone written next to the time travels with it
+                caps["timestamp"] = f"{caps['timestamp']} {caps['tz']}"
             payload = caps.pop("payload", None)
             if payload is None and chk.get("payload_fallback"):
                 payload = caps.get(chk["payload_fallback"])

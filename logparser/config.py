@@ -5,7 +5,7 @@ Everything format-specific lives in the registry as data.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 
 
 @dataclass
@@ -55,6 +55,9 @@ class Settings:
     shadow_min_ok: float = 0.995
     # Normalisation.
     default_tz: str = "auto"            # "auto": the offset of most zoned timestamps seen, else UTC
+    # Zone names written in lines ("IST", "CET"): one name can mean several zones (IST is India,
+    # Ireland or Israel), so only names listed here are read; UTC, GMT and Z always are.
+    tz_names: dict = field(default_factory=dict)
     max_line_len: int = 65536
     keep_raw_data: bool = False
     # bounded storage: the database keeps a recent window per raw signature, not every line.

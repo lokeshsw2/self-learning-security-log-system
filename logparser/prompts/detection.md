@@ -34,6 +34,18 @@ A header rule
   the message after the header). It must capture at least one of timestamp, host or app. A
   captured `timestamp` must parse as a time on every sample. Keep `app` to the program name: no
   brackets, no pid (the example strips a stray `]` and reads `[pid]` separately).
+- Times. If the lines start with a time, capture it as `timestamp`; a rule that matches a time and
+  drops it is refused. The engine reads ISO times, `2026/11/22 10:15:03`, syslog `Nov 22 10:15:03`,
+  `22/Nov/2026:10:15:03`, epochs and times of day. For any other layout add `time_format`, a
+  strptime format for the captured text, for example `"%d.%m.%Y %H:%M:%S,%f"` for
+  `22.11.2026 10:15:03,456` or `"%m-%d-%Y %I:%M:%S %p"`; code checks it on every sample. A time with
+  no date is fine (the date is the day the line arrived). A date with no year: leave `time_format`
+  out and let the engine read it.
+- Zones. If a zone is written after the time (`UTC`, `+0530`, `IST`, `CET`), capture it as a named
+  group `tz` (or include it in `timestamp` and use `%z`); a rule that leaves a written zone out is
+  refused. Zone names are read only if the deployment's table lists them, because a name such as
+  IST means different zones in different places. If the check says a name is not in the table,
+  flag the item so a human adds it; do not drop the zone.
 
 How to work
 1. Read the samples and the existing rules. Find why the closest existing rule does not match

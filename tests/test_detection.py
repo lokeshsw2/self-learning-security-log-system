@@ -182,3 +182,100 @@ def test_harness_detection_role_saves_through_the_gate(tmp_path):
     refused = json.loads(fake.requests[2]["messages"][4]["content"][0]["content"])
     assert refused["saved"] is False and "anchored" in refused["refused"]
     assert "Role: detection" in fake.requests[0]["system"]
+
+
+# --------------------------------------------------------------------- times, zones and shapes
+def eu(i):        # day-first dotted date: the engine cannot read it without a format
+    return f"22.11.2026 10:{i % 60:02d}:33,{i:03d} mx{i % 3} postfix/smtpd[{300 + i}]: connect from unknown[203.0.113.{i}]"
+
+
+def ist(i):       # a zone name after the time
+    return f"2026-11-22 10:{i % 60:02d}:39 IST db-0{i % 3} mysqld[{400 + i}]: Access denied for user 'u{i % 4}'@'10.0.0.{i}'"
+
+
+def tod(i):       # a time of day with no date
+    return f"10:{i % 60:02d}:52.516 lb-0{i % 3} keepalived: VRRP state change to MASTER on eth{i % 2}"
+
+
+def pipe(i):      # a header with no spaces; the program name varies in shape
+    return f"17953221{i:05d}|edge-fw-0{i % 3}|{('vpnd', 'ikev2d', 'authd')[i % 3]}|session opened for u{i % 4}"
+
+
+HOST_APP = r"(?P<host>[A-Za-z0-9][A-Za-z0-9._\-]*) (?P<app>[^\s:\[\]]+)(?:\[(?P<pid>\d+)\])?: (?P<payload>.*)$"
+
+
+def queued(tmp_path, lines, **settings):
+    eng = make(tmp_path, group_threshold=50, **settings)
+    feed(eng, tmp_path, lines)
+    detection.scan(eng)
+    return eng, eng.store.queue_items(detection.QUEUE)
+
+
+def test_a_matched_time_must_be_captured(tmp_path):
+    eng, items = queued(tmp_path, [eu(i) for i in range(25)])
+    dropped = {"name": "ai_eu", "order": 50, "type": "envelope", "app": ["app"],
+               "test": {"kind": "regex", "pattern": r"^\d\d\.\d\d\.\d{4} \d\d:\d\d:\d\d,\d+ " + HOST_APP}}
+    with pytest.raises(detection.DetectRefused, match="start with a time"):
+        detection.evaluate(eng, items[0]["payload"], dropped)
+
+
+def test_time_format_reads_a_day_first_date(tmp_path):
+    eng, items = queued(tmp_path, [eu(i) for i in range(25)])
+    rule = {"name": "ai_eu", "order": 50, "type": "envelope", "app": ["app"], "time_format": "%d.%m.%Y %H:%M:%S,%f",
+            "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d\d\.\d\d\.\d{4} \d\d:\d\d:\d\d,\d+) " + HOST_APP}}
+    res = detection.evaluate(eng, items[0]["payload"], rule)
+    assert res["ok"], res
+    h = res["target"]["first"]["header"]
+    assert h["@timestamp"].startswith("2026-11-22T10:") and h["@timestamp_raw"].startswith("22.11.2026 ")
+    Tools(eng, "harness:detection").save_detect(items[0]["key"], rule)
+    feed(eng, tmp_path, [eu(77)])
+    det = detect(eng.snap, eu(77))
+    assert det.chain[0] == "ai_eu" and det.header["@timestamp"] == "2026-11-22T10:17:33.077000"
+
+
+@pytest.mark.parametrize("fmt,why", [("%d.%m %H:%M", "needs the year"), ("%d.%m.%Y %H:%M:%S %Z", "strptime format"),
+                                     ("%d.%m.%Y", "hour and minute")])
+def test_time_format_is_checked(tmp_path, fmt, why):
+    eng = setup(tmp_path)
+    rule = {**GOOD, "time_format": fmt}
+    with pytest.raises(detection.DetectRefused, match=why):
+        detection.check_rule(eng, rule)
+
+
+def test_a_written_zone_must_be_captured_and_known(tmp_path):
+    eng, items = queued(tmp_path, [ist(i) for i in range(25)], tz_names={"IST": "+05:30"})
+    item = items[0]["payload"]
+    no_tz = {"name": "ai_ist", "order": 50, "type": "envelope", "app": ["app"],
+             "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) [A-Z]{2,5} " + HOST_APP}}
+    res = detection.evaluate(eng, item, no_tz)
+    assert not res["ok"] and "capture it as `tz`" in res["target"]["bad_time"][0]
+    with_tz = {**no_tz, "test": {"kind": "regex", "pattern":
+                                 r"^(?P<timestamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) (?P<tz>[A-Z]{2,5}) " + HOST_APP}}
+    res = detection.evaluate(eng, item, with_tz)
+    assert res["ok"] and res["target"]["first"]["header"]["@timestamp"].endswith(" IST")
+    eng.settings.tz_names = {}                                  # a name nobody has defined: a human decides
+    res = detection.evaluate(eng, item, with_tz)
+    assert not res["ok"] and res["target"]["bad_time"]
+
+
+def test_time_of_day_gets_the_arrival_date(tmp_path):
+    from logparser import transforms
+    eng, items = queued(tmp_path, [tod(i) for i in range(25)])
+    rule = {"name": "ai_tod", "order": 50, "type": "envelope", "app": ["app"],
+            "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d\d:\d\d:\d\d(?:\.\d+)?) " + HOST_APP}}
+    assert detection.evaluate(eng, items[0]["payload"], rule)["ok"]
+    ctx = {"default_tz": "UTC", "now": 1795342000}
+    assert transforms.parse_timestamp("08:05:00", {}, ctx) == 1795334700000 and "date_assumed" in ctx["flags"]
+
+
+def test_pipe_header_is_one_shape_whatever_the_program(tmp_path):
+    eng, items = queued(tmp_path, [pipe(i) for i in range(30)])
+    assert len(items) == 1 and items[0]["payload"]["count"] == 30 and items[0]["payload"]["shape"] == "0|"
+
+
+def test_audit_sees_day_first_dates_and_times_of_day():
+    import types
+    from logparser import checks
+    det = types.SimpleNamespace(header={})
+    for text in ("22.11.2026 10:05:33,293 mx2 postfix", "10:09:52.516 lb-03 keepalived: up"):
+        assert checks.problems(det, {"_text": text}, {"time": 1}, ["time_from_ingest"], {})

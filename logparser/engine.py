@@ -601,7 +601,8 @@ class Engine:
                 self._zones["+00:00" if z in ("Z", "z") else (z if ":" in z else z[:3] + ":" + z[3:])] += 1
 
     def _ctx(self, g: dict, rec: Record) -> dict:
-        ctx = {"now": self._clock(), "default_tz": self.deployment_tz(), "labels": g.get("labels") or {}}
+        ctx = {"now": self._clock(), "default_tz": self.deployment_tz(), "labels": g.get("labels") or {},
+               "tz_names": self.settings.tz_names}
         if self.settings.keep_raw_data:
             ctx["raw_data"] = rec.text
         return ctx

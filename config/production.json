@@ -1,6 +1,9 @@
 {
-  "retain_parsed": 200,
-  "retain_unparsed": 1000,
-  "auto_repair": true,
-  "default_tz": "auto"
+ "retain_parsed": 200,
+ "retain_unparsed": 1000,
+ "auto_repair": true,
+ "default_tz": "auto",
+ "tz_names": {
+  "IST": "+05:30"
+ }
 }

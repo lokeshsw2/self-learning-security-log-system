@@ -14,7 +14,10 @@ from zoneinfo import ZoneInfo
 from . import rx
 
 MONTHS = {m.lower(): i for i, m in enumerate(calendar.month_abbr) if m}
-_ISO = rx.compile(r"^(\d{4})-(\d\d)-(\d\d)[Tt ](\d\d):(\d\d):(\d\d)(?:[.,](\d+))?\s*(Z|z|UTC|GMT|[+-]\d\d:?\d\d)?$")
+_ISO = rx.compile(r"^(\d{4})-(\d\d)-(\d\d)[Tt ](\d\d):(\d\d):(\d\d)(?:[.,](\d+))?\s*(Z|z|UTC|GMT|[+-]\d\d:?\d\d|[A-Z]{2,5})?$")
+# a time of day with no date (the line's date is the day it arrived)
+_TOD = rx.compile(r"^(\d{1,2}):(\d\d):(\d\d)(?:[.,](\d+))?\s*(Z|UTC|GMT|[+-]\d\d:?\d\d|[A-Z]{2,5})?$")
+_ZONE_NAME = rx.compile(r"^[A-Z]{2,5}$")
 _SLASH = rx.compile(r"^(\d{4})/(\d\d?)/(\d\d?)[ T](\d\d):(\d\d):(\d\d)(?:[.,](\d+))?$")
 _SYSLOG = rx.compile(r"^(?:[A-Z][a-z]{2},? )?([A-Z][a-z]{2})\s+(\d{1,2})(?:\s+(\d{4}))?\s+(\d\d):(\d\d):(\d\d)(?:[.,](\d+))?"
                      r"(?:\s+(\d{4}))?(?:\s+(Z|UTC|GMT|[+-]\d\d:?\d\d))?$")
@@ -32,6 +35,11 @@ def _tz(name: str | None, ctx: dict):
     name = name or ctx.get("default_tz") or "UTC"
     if name in ("Z", "z", "UTC", "GMT"):
         return dt.timezone.utc
+    if _ZONE_NAME.match(name):           # a zone name: only what the deployment's table says it means
+        off = (ctx.get("tz_names") or {}).get(name)
+        if off is None:
+            raise TransformError(f"zone name {name} is not in the tz_names setting; a human decides what it means")
+        name = off
     m = _OFFSET.match(name)
     if m:
         sign = -1 if m.group(1) == "-" else 1
@@ -93,9 +101,21 @@ def parse_timestamp(value, args: dict, ctx: dict):
             d = d.replace(tzinfo=_tz(tzname, ctx))
         return _ms(d)
     m = _ISO.match(s)
+    tod = None if m else _TOD.match(s)
     if m:
         y, mo, da, h, mi, se, frac, off = m.groups()
         d = dt.datetime(int(y), int(mo), int(da), int(h), int(mi), int(se), _frac_us(frac))
+    elif tod:
+        h, mi, se, frac, off = tod.groups()
+        zone = _tz(off or tzname, ctx)
+        now = dt.datetime.fromtimestamp(ctx.get("now", 0) or dt.datetime.now().timestamp(), zone)
+        d = now.replace(hour=int(h), minute=int(mi), second=int(se), microsecond=_frac_us(frac))
+        if d > now + dt.timedelta(hours=1):       # just before midnight, read just after it
+            d -= dt.timedelta(days=1)
+        _flag(ctx, "date_assumed")
+        if not off:
+            _flag(ctx, "tz_assumed")
+        return _ms(d)
     else:
         m = _SLASH.match(s)
         if m:

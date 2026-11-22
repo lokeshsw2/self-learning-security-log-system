@@ -27,7 +27,10 @@ _WORD = rx.compile(r"[A-Za-z]+")          # "user_rejected" -> user, rejected
 # event-name fields: only their last part states an outcome ("mfa.challenge.denied" -> denied)
 EVENT_KEYS = {"event", "event_type", "eventtype", "event_name", "eventname", "type", "name", "operation", "activity"}
 _LAST = rx.compile(r"[A-Za-z]+$")
-_DATEISH = rx.compile(r"\b(?:\d{4}[-/]\d\d[-/]\d\d|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\d{1,2} )")
+# a date or time the line carries: year-first or day-first (- / .), syslog month and day, or a time of
+# day at the start of a value ("22.11.2026 10:15:03" and "10:15:03.123 lb-03 ..." count too)
+_DATEISH = rx.compile(r"(?:\b\d{4}[-/.]\d\d[-/.]\d\d|\b\d{1,2}[./-]\d{1,2}[./-]\d{4}\b|"
+                      r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\d{1,2} |^\s*\d{1,2}:\d\d:\d\d)")
 _EPOCH_KEYS = {"ts", "time", "timestamp", "eventtime", "event_time", "epoch", "created", "start", "end", "rt"}
 NEGATIONS = {"not", "no", "un", "non"}
 HOUR_MS = 3_600_000

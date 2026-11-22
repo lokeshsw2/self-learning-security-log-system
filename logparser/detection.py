@@ -42,11 +42,16 @@ from .detect import AI_PREFIX, detect, shape
 from .reader import Record
 
 QUEUE = "needs-detection"
-# a header worth reading starts with a time or a syslog priority: an ISO or slashed date, a
-# syslog month and day, an epoch of ten or more digits, <pri>, or a bracketed date
-HEADED = re.compile(r"^(?:<\d{1,3}>|\d{4}[-/]\d\d[-/]\d\d|\d\d/[A-Za-z]{3}/\d{4}|\d{10,13}(?:\.\d+)?\s|"
+# a header worth reading starts with a time or a syslog priority: a year-first or day-first date
+# (any of - / . as separator), a syslog month and day, an epoch of ten to thirteen digits followed
+# by a separator, a time of day, <pri>, or a bracketed date
+HEADED = re.compile(r"^(?:<\d{1,3}>|\d{4}[-/.]\d\d[-/.]\d\d|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}[\sT,]|"
+                    r"\d\d/[A-Za-z]{3}/\d{4}|\d{10,13}(?:\.\d+)?(?:[\s|,;]|$)|\d{1,2}:\d\d:\d\d|"
                     r"\[\d{1,4}[-/:.]|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s)")
 NEED_ONE_OF = {"timestamp", "host", "app"}
+TIME_CODES = set("YymdbBjHIpMSfz%")             # strptime codes a time_format may use
+# a zone written right after the time: an offset, UTC/GMT/Z, or a name such as IST, CET, CEST, AEST
+ZONE_AFTER = re.compile(r"^\s+(?:[+-]\d\d:?\d\d|UTC|GMT|Z|[A-Z]{1,3}T)\b")
 MAX_SAMPLES = 30
 
 
@@ -155,6 +160,17 @@ def check_rule(e, body: dict) -> None:
         raise DetectRefused("the pattern must capture at least one of `timestamp`, `host` or `app`")
     if body["type"] != "envelope":
         raise DetectRefused("an added rule reads a header (type `envelope`); formats are detected after it")
+    fmt = body.get("time_format")
+    if fmt is not None:
+        if "timestamp" not in groups:
+            raise DetectRefused("`time_format` describes the `timestamp` group, which the pattern does not have")
+        codes = set(re.findall(r"%(.)", fmt))
+        if not codes <= TIME_CODES or "H" not in codes and "I" not in codes or "M" not in codes:
+            raise DetectRefused("`time_format` is a strptime format using only %Y %y %m %d %b %B %j %H %I %p "
+                                "%M %S %f %z, with at least the hour and minute")
+        if codes & set("mdbBj") and not codes & set("Yy"):
+            raise DetectRefused("a `time_format` with a date needs the year (%Y or %y); for a date with no year, "
+                                "leave `time_format` out")
 
 
 def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
@@ -164,13 +180,26 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
     body = scoped(body, item)
     cand = _snap_with(e.snap, body)
     name = body["name"]
-    ctx = {"default_tz": e.deployment_tz(), "now": e._clock()}
+    ctx = {"default_tz": e.deployment_tz(), "now": e._clock(), "tz_names": e.settings.tz_names}
     samples = item["samples"]
+    groups = set(rx.compile(body["test"]["pattern"]).groupindex)
+    timed = [s for s in samples if HEADED.match(s.lstrip()) and not s.lstrip().startswith("<")]
+    if timed and "timestamp" not in groups:
+        raise DetectRefused(f"{len(timed)} of {len(samples)} sample lines start with a time, e.g. {timed[0][:60]!r}: "
+                            "capture it as `timestamp`, and add `time_format` if the engine cannot read it as it "
+                            "is; if it cannot be described, flag the item for a human")
     target = {"lines": len(samples), "read": 0, "not_read": [], "bad_time": [], "first": None}
     for s in samples:
         d = detect(cand, s)
         if name in d.chain and not weak(d) and d.payload is not None:
             ts = d.header.get("@timestamp")
+            raw_ts = d.header.get("@timestamp_raw", ts)
+            if raw_ts and "tz" not in groups and "%z" not in (body.get("time_format") or ""):
+                after = s[s.find(raw_ts) + len(raw_ts):] if raw_ts in s else ""
+                if ZONE_AFTER.match(after):
+                    if len(target["bad_time"]) < 3:
+                        target["bad_time"].append(f"{raw_ts} (a zone follows the time in the line: capture it as `tz`)")
+                    continue
             if ts is not None:
                 try:
                     transforms.parse_timestamp(ts, {}, ctx)
