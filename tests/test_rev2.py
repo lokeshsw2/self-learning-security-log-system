@@ -202,3 +202,36 @@ def test_source_families_and_naming(tmp_path):
     e2.sources = {}
     feed(e2, tmp_path, [a[0].replace('"uuid":"0"', '"uuid":"99"')], name="more.log")
     assert [s["vendor"] for s in eng.store.sources()] == ["Okta"]
+
+
+def test_gate_refuses_time_and_outcome_that_contradict_the_line(tmp_path):
+    eng = make(tmp_path)
+    lines = ['<134>1 2026-11-02T14:52:3%d+05:30 fw - - - - 10,11/02/26,14:52:3%d,Deny,10.0.0.%d,host%d,aa:bb:cc:dd:ee:0%d,,0,0'
+             % (i, i, i, i, i) for i in range(8)]
+    feed(eng, tmp_path, lines)
+    g = [x for x in eng.store.groups("merged_into IS NULL") if x["parser_rule"]][0]
+    t = Tools(eng, "m")
+    base = {"class": "network_activity", "constants": {"activity_id": 6, "src_endpoint.ip": "10.0.0.1"},
+            "fields": [{"to": "src_endpoint.ip", "from": "c4", "confidence": "high", "note": "client"}]}
+    naive = json.loads(json.dumps(base))       # local date and time read as UTC: 5.5 hours off the header
+    naive["fields"].append({"to": "time", "from": ["c1", "c2"], "join": " ", "confidence": "high", "note": "t",
+                            "transform": {"fn": "parse_timestamp", "args": {"formats": ["%m/%d/%y %H:%M:%S"]}}})
+    res = t.test_mapping(g["signature"], naive)
+    assert any(e["error"].startswith("time:") for e in res["errors"])
+    with pytest.raises(Refused, match="time"):
+        t.save_mapping(g["signature"], naive)
+    no_time = json.loads(json.dumps(base))     # no time entry: the engine falls back to the header time
+    assert not [e for e in t.test_mapping(g["signature"], no_time)["errors"] if e["error"].startswith("time:")]
+    good = json.loads(json.dumps(base))
+    good["fields"].append({"to": "time", "from": "@timestamp", "transform": {"fn": "parse_timestamp"},
+                           "confidence": "high", "note": "header time with zone"})
+    assert not [e for e in t.test_mapping(g["signature"], good)["errors"] if e["error"].startswith("time:")]
+    # outcome: a deny word in an action-like field needs an outcome in the event
+    from logparser.checks import problems
+    from logparser.detect import Detection
+    d = Detection(header={})
+    ev = {"class_uid": 4001, "time": 1}
+    assert problems(d, {"action": "Deny"}, ev, [], {})[0].startswith("outcome:")
+    assert problems(d, {"action": "Deny"}, {**ev, "action_id": 2}, [], {}) == []
+    assert "Success" in problems(d, {"action": "blocked"}, {**ev, "status_id": 1}, [], {})[0]
+    assert problems(d, {"url": "/blocked-page"}, ev, [], {}) == []           # not an outcome field

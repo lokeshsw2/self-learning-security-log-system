@@ -961,10 +961,113 @@
       "from": "event_reason",
       "note": "teardown reason text",
       "to": "message"
+     },
+     {
+      "confidence": "high",
+      "from": "destination_ip",
+      "note": "outbound: initiator is the second address",
+      "to": "src_endpoint.ip",
+      "when": {
+       "field": "cisco_asa_network_direction",
+       "matches": "(?i)^outbound$"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "destination_port",
+      "note": "outbound: initiator port",
+      "to": "src_endpoint.port",
+      "when": {
+       "field": "cisco_asa_network_direction",
+       "matches": "(?i)^outbound$"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "observer_egress_interface_name",
+      "note": "outbound: initiator's interface",
+      "to": "src_endpoint.interface_name",
+      "when": {
+       "field": "cisco_asa_network_direction",
+       "matches": "(?i)^outbound$"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "source_ip",
+      "note": "outbound: responder is the first address",
+      "to": "dst_endpoint.ip",
+      "when": {
+       "field": "cisco_asa_network_direction",
+       "matches": "(?i)^outbound$"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "source_port",
+      "note": "outbound: responder port",
+      "to": "dst_endpoint.port",
+      "when": {
+       "field": "cisco_asa_network_direction",
+       "matches": "(?i)^outbound$"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "observer_ingress_interface_name",
+      "note": "outbound: responder's interface",
+      "to": "dst_endpoint.interface_name",
+      "when": {
+       "field": "cisco_asa_network_direction",
+       "matches": "(?i)^outbound$"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "cisco_asa_outcome",
+      "note": "deny words = Denied, built = Allowed",
+      "to": "action_id",
+      "transform": {
+       "args": {
+        "map": {
+         "built": 1,
+         "denied": 2,
+         "denied by acl": 2,
+         "deny": 2,
+         "discarded": 2,
+         "dropping": 2,
+         "est-allowed": 1,
+         "permitted": 1
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "cisco_asa_outcome",
+      "note": "deny words = Blocked, built = Allowed",
+      "to": "disposition_id",
+      "transform": {
+       "args": {
+        "map": {
+         "built": 1,
+         "denied": 2,
+         "denied by acl": 2,
+         "deny": 2,
+         "discarded": 2,
+         "dropping": 2,
+         "est-allowed": 1,
+         "permitted": 1
+        }
+       },
+       "fn": "enum_lookup"
+      }
      }
     ],
     "profiles": [
-     "host"
+     "host",
+     "security_control"
     ]
    },
    "meta": {

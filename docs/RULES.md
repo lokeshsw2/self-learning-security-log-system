@@ -103,6 +103,12 @@ Filled by code, do not map: `class_uid`, `category_uid`, `type_uid`,
 `time` falls back to the envelope `@timestamp`, then to ingest time. Values are
 cast to the schema type (string to integer and so on) when the cast is exact.
 
+Meaning checks, also in the gate: the mapped `time` must be within an hour of every zoned
+timestamp in the line (header or field), and must not fall back to the ingest time when the line
+has a timestamp (set `"time_from_ingest_ok": true` only for sources that log no time at all). A
+field such as `action`, `result` or `status` that holds a block or failure word needs an outcome in
+the event (`status_id`, `action_id` or `disposition_id`) that does not say the opposite.
+
 Save gate: the class and every `to` path must exist in OCSF 1.10.0, every entry
 needs confidence and note, every sample must give a schema-valid event with no
 transform errors, and at least 98% of the other stored lines must too.
@@ -127,6 +133,7 @@ A `transform` is one step or a list of steps: `{"fn": name, "args": {...}}`.
 | `null_if` | `values` | drop the field when it equals one of the values, for example `["-", "N/A"]` |
 | `scale` | `factor`, `int` | multiply (seconds to milliseconds: 1000) |
 | `prefix` | `prefix`, `suffix` | add fixed text |
+| `dns_name` | | Windows DNS debug-log name `(3)www(7)example(3)com(0)` to `www.example.com` |
 | `syslog_severity` | `from_pri` | syslog PRI or severity 0-7 to OCSF `severity_id` |
 
 ## Mask rule (unstructured sources)

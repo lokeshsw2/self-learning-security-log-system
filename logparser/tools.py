@@ -415,6 +415,9 @@ class Tools:
                 continue
             fields_n += len(res["fields"])
             unmapped_n += len((res["event"] or {}).get("unmapped") or {})
+            from .checks import problems as meaning_problems
+            res["errors"] = list(res["errors"]) + meaning_problems(det, res["fields"], res["event"], res["tags"],
+                                                                    resolved)
             if res["errors"]:
                 for err in res["errors"][:6]:
                     lst = problems.setdefault(err, [])
@@ -454,6 +457,37 @@ class Tools:
                                             "`switch` in the mapping to choose the class per line"}
         self._log("test_mapping", group, True, f"{ok}/{len(samples)}; holdout {hok}/{len(rest)}")
         return res
+
+    def audit_mappings(self, enqueue: bool = False) -> dict:
+        """Run the meaning checks on the stored samples of every mapped group."""
+        out = {"groups_checked": 0, "groups_failing": 0, "by_problem": {}, "by_source": {}}
+        for g in self.store.groups("merged_into IS NULL AND mapping_rule IS NOT NULL AND status != 'split'"):
+            r = self.e.snap.rule(g["mapping_rule"])
+            if not r:
+                continue
+            resolved = ocsf.resolve_mapping(r["body"], self.e.snap.rule)
+            rows = [{"raw": s["raw"], "source": g["source"]} for s in self.store.samples(g["signature"])][:20]
+            if not rows:
+                continue
+            out["groups_checked"] += 1
+            _, problems, _, _ = self._try_mapping(g, resolved, rows)
+            mean = {k: v for k, v in problems.items() if k.startswith(("time:", "outcome:"))}
+            if not mean:
+                continue
+            out["groups_failing"] += 1
+            src = g["source"].split("|", 1)[0] if not g["source"].startswith("-|") else g["source"]
+            out["by_source"][src] = out["by_source"].get(src, 0) + 1
+            for k in mean:
+                kind = k.split(":", 1)[0] + ": " + k.split(":", 1)[1].split(";")[0].split(",")[0][:60].strip()
+                out["by_problem"][kind] = out["by_problem"].get(kind, 0) + 1
+            if enqueue:
+                self.store.reopen("needs-mapping", g["signature"], {
+                    "signature": g["signature"], "bucket": g["bucket"], "source": g["source"], "count": g["count"],
+                    "reported_by": "audit", "current_rule": g["mapping_rule"],
+                    "reason": "the saved mapping fails the meaning checks: " + " | ".join(list(mean)[:3])[:600],
+                    "examples": [v[0] for v in list(mean.values())[:2]]})
+        self._log("audit_mappings", None, True, json.dumps(out)[:300])
+        return out
 
     def save_mapping(self, group: str | None, body: dict, labels: dict | None = None, note: str = "",
                      base: str | None = None) -> dict:

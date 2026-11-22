@@ -91,7 +91,7 @@ SCHEMAS: dict[str, dict] = {
     "mapping": {"type": "object", "required": ["class"], "additionalProperties": False, "properties": {
         "class": {"type": "string"}, "extends": {"type": "string"}, "profiles": STR_LIST,
         "constants": {"type": "object"}, "unmapped": {"enum": ["rest", "none"]}, "scope": SCOPE,
-        "exclude": STR_LIST, "drop": STR_LIST,
+        "exclude": STR_LIST, "drop": STR_LIST, "time_from_ingest_ok": {"type": "boolean"},
         "switch": {"type": "array", "maxItems": 8, "items": {
             "type": "object", "required": ["when", "use"], "additionalProperties": False,
             "properties": {"when": WHEN, "use": {"type": "string", "pattern": "^mapping:"}}}}, "labels": {"type": "object"}, "match": MATCH,

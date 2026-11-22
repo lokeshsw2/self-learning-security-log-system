@@ -372,6 +372,8 @@ def resolve_mapping(body: dict, get_rule, depth: int = 0) -> dict:
         if "unmapped" in b:
             merged["unmapped"] = b["unmapped"]
         merged["drop"] += [d for d in b.get("drop") or [] if d not in merged["drop"]]
+        if b.get("time_from_ingest_ok"):
+            merged["time_from_ingest_ok"] = True
     merged["switch"] = []
     if depth == 0:
         for sw in body.get("switch") or []:

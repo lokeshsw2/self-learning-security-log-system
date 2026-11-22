@@ -188,6 +188,10 @@ def main(argv=None) -> None:
     p = sub.add_parser("tiers")
     p.set_defaults(fn=lambda a: print(json.dumps(__import__("logparser.repair", fromlist=["x"]).tiers(
         SqliteStore(a.db)), indent=1)))
+    p = sub.add_parser("audit", help="run the meaning checks over saved mappings")
+    p.add_argument("--enqueue", action="store_true")
+    p.set_defaults(fn=lambda a: print(json.dumps(__import__("logparser.tools", fromlist=["x"]).Tools(
+        open_engine(a), "audit").audit_mappings(a.enqueue), indent=1)))
     p = sub.add_parser("finalize")
     p.set_defaults(fn=lambda a: (open_engine(a).finalize(), print("finalized")))
     p = sub.add_parser("replay")

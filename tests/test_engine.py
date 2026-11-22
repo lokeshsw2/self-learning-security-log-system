@@ -190,8 +190,10 @@ def test_seeded_asa_line_becomes_valid_network_activity(tmp_path):
     ev = eng.store.q("SELECT * FROM events")[0]
     o = json.loads(ev["ocsf"])
     assert ev["valid"] == 1 and o["class_uid"] == 4001 and o["activity_id"] == 1 and o["type_uid"] == 400101
-    assert o["src_endpoint"] == {"ip": "100.66.205.104", "port": 80, "interface_name": "outside"}
-    assert o["dst_endpoint"]["ip"] == "172.31.98.44" and o["connection_info"]["direction_id"] == 2
+    # "Built outbound ... for outside:X to inside:Y": the inside host Y started the connection
+    assert o["src_endpoint"] == {"ip": "172.31.98.44", "port": 1772, "interface_name": "inside"}
+    assert o["dst_endpoint"]["ip"] == "100.66.205.104" and o["connection_info"]["direction_id"] == 2
+    assert o["action_id"] == 1 and o["disposition_id"] == 1
     assert o["time"] == 1539174896000 and o["metadata"]["version"] == "1.10.0"
     assert eng.store.rule_versions(ev["parser_rule"])[0]["meta"]["license"] == "Apache-2.0"
 

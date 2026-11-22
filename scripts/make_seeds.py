@@ -113,6 +113,7 @@ def F(to, frm=None, value=None, transform=None, when=None, confidence="high", no
     return d
 
 
+OUTBOUND = {"field": "cisco_asa_network_direction", "matches": "(?i)^outbound$"}
 IPISH = r"^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+)$"
 NOT_IP = r"[G-Zg-z]"
 SEV_SYSLOG = {"fn": "enum_lookup", "args": {"map": {"0": 6, "1": 5, "2": 5, "3": 4, "4": 3, "5": 2, "6": 1, "7": 1},
@@ -151,7 +152,7 @@ def build() -> dict:
             conn_ids.update(ids)
         add("cisco_asa", f"parser:seed-cisco-asa-{'-'.join(ids)}", body, GROK_META, f"grok {name}")
     add("cisco_asa", asa_map, {
-        "class": "network_activity", "profiles": ["host"],
+        "class": "network_activity", "profiles": ["host", "security_control"],
         "constants": {"metadata.product.name": "ASA", "metadata.product.vendor_name": "Cisco",
                       "connection_info.direction_id": 0},
         "fields": [
@@ -183,6 +184,21 @@ def build() -> dict:
             F("traffic.bytes", "network_bytes", note="bytes reported at teardown"),
             F("actor.user.name", ["source_user_name", "user_name"], confidence="medium", note="user in parentheses"),
             F("message", "event_reason", confidence="medium", note="teardown reason text"),
+            # "Built outbound ... for outside:X to inside:Y": the inside host Y started the connection
+            F("src_endpoint.ip", "destination_ip", when=OUTBOUND, note="outbound: initiator is the second address"),
+            F("src_endpoint.port", "destination_port", when=OUTBOUND, note="outbound: initiator port"),
+            F("src_endpoint.interface_name", "observer_egress_interface_name", when=OUTBOUND, confidence="medium",
+              note="outbound: initiator's interface"),
+            F("dst_endpoint.ip", "source_ip", when=OUTBOUND, note="outbound: responder is the first address"),
+            F("dst_endpoint.port", "source_port", when=OUTBOUND, note="outbound: responder port"),
+            F("dst_endpoint.interface_name", "observer_ingress_interface_name", when=OUTBOUND, confidence="medium",
+              note="outbound: responder's interface"),
+            F("action_id", "cisco_asa_outcome", transform={"fn": "enum_lookup", "args": {
+                "map": {"deny": 2, "denied": 2, "denied by acl": 2, "discarded": 2, "dropping": 2,
+                        "built": 1, "permitted": 1, "est-allowed": 1}}}, note="deny words = Denied, built = Allowed"),
+            F("disposition_id", "cisco_asa_outcome", transform={"fn": "enum_lookup", "args": {
+                "map": {"deny": 2, "denied": 2, "denied by acl": 2, "discarded": 2, "dropping": 2,
+                        "built": 1, "permitted": 1, "est-allowed": 1}}}, note="deny words = Blocked, built = Allowed"),
         ]}, OCSF_META, "Cisco ASA connection messages (106023, 302013-302016, 305011, 305012 and similar)")
 
     # ---------------- web access logs

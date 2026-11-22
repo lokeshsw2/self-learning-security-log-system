@@ -232,6 +232,18 @@ def prefix(value, args, ctx):
     return f"{args.get('prefix', '')}{value}{args.get('suffix', '')}"
 
 
+_WIRE = rx.compile(r"\((\d{1,2})\)")
+
+
+def dns_name(value, args, ctx):
+    """Windows DNS debug-log question name `(3)www(7)example(3)com(0)` -> `www.example.com`."""
+    s = str(value).strip()
+    if "(" not in s:
+        return s.rstrip(".") or None
+    labels = [p for p in _WIRE.split(s)[2::2] if p]
+    return ".".join(labels) or None
+
+
 def syslog_severity(value, args, ctx):
     """Syslog PRI or severity number (0-7) -> OCSF severity_id."""
     n = to_int(value, {}, ctx)
@@ -256,6 +268,7 @@ FUNCS = {
     "scale": (scale, {"factor": (int, float), "int": bool}, ["factor"]),
     "prefix": (prefix, {"prefix": str, "suffix": str}, []),
     "syslog_severity": (syslog_severity, {"from_pri": bool}, []),
+    "dns_name": (dns_name, {}, []),
 }
 
 
