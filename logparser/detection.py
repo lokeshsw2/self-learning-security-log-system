@@ -57,6 +57,7 @@ ZONE_NAMES = ("UTC GMT UT Z IST CET CEST EET EEST WET WEST BST MSK EST EDT CST C
 # a zone written right after the time: an offset or Z (attached or not), or a real zone abbreviation
 ZONE_AFTER = re.compile(r"^(?:\s*(?:[+-]\d\d:?\d\d\b|Z\b)|\s+(?:" + "|".join(ZONE_NAMES) + r")\b)")
 PRI = re.compile(r"^<\d{1,3}>")
+MERIDIEM = re.compile(r"^\s*[AaPp]\.?[Mm]\.?\b")
 YEAR_MS = 365 * 86400 * 1000
 
 
@@ -110,10 +111,9 @@ def scan(e, min_lines: int = 20, enqueue: bool = True) -> dict:
                 continue                      # handled well already: leave the working rules alone
             out["shapes"] += 1
             lines = b["lines"]
-            step = max(1, len(lines) // MAX_SAMPLES)
             payload = {"source": src, "shape": sh, "count": len(lines), "not_handled": b["unwell"],
                        "why": "no rule reads their header: they wait for a rule or carry the ingest time",
-                       "samples": lines[::step][:MAX_SAMPLES]}
+                       "samples": _spread(lines, MAX_SAMPLES)}
             key = f"{src}#{sh}"
             if not enqueue:
                 continue
@@ -124,6 +124,26 @@ def scan(e, min_lines: int = 20, enqueue: bool = True) -> dict:
             elif prev[0]["status"] == "done":  # a rule was saved, yet lines of this shape are still unread
                 e.store.reopen(QUEUE, key, {**payload, "again": "a saved rule did not read these lines"})
                 out["queued"] += 1
+    return out
+
+
+def _layout(line: str) -> str:
+    """A finer key than the shape: the first three tokens, digits -> 0, capitals -> A, small letters -> a."""
+    head = " ".join(line.lstrip().split(" ", 3)[:3])[:64]
+    return re.sub(r"[a-z]+", "a", re.sub(r"[A-Z]+", "A", re.sub(r"\d+", "0", head)))
+
+
+def _spread(lines: list, n: int) -> list:
+    """Up to n samples taken in turn from each layout, so a minority layout in an item is shown too."""
+    by: dict = {}
+    for l in lines:
+        by.setdefault(_layout(l), []).append(l)
+    queues = [v[::max(1, len(v) // n)] for v in sorted(by.values(), key=len, reverse=True)]
+    out: list = []
+    while len(out) < n and any(queues):
+        for q in queues:
+            if q and len(out) < n:
+                out.append(q.pop(0))
     return out
 
 
@@ -230,8 +250,13 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
             target["bad"] += 1            # undone below once the line comes out right
             ts = d.header.get("@timestamp")
             raw_ts = d.header.get("@timestamp_raw", ts)
+            after = s[s.find(raw_ts) + len(raw_ts):] if raw_ts and raw_ts in s else ""
+            if raw_ts and MERIDIEM.match(after) and "%p" not in (body.get("time_format") or ""):
+                if len(target["bad_time"]) < 3:
+                    target["bad_time"].append(f"{raw_ts} (AM/PM follows the time: capture it in `timestamp` and use "
+                                              f"%I ... %p in `time_format`)")
+                continue
             if raw_ts and "tz" not in groups and "%z" not in (body.get("time_format") or ""):
-                after = s[s.find(raw_ts) + len(raw_ts):] if raw_ts in s else ""
                 if ZONE_AFTER.match(after):
                     if len(target["bad_time"]) < 3:
                         target["bad_time"].append(f"{raw_ts} (a zone follows the time in the line: capture it as `tz`)")
@@ -283,6 +308,13 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
                                       f"is a zone, capture it as `tz`; if it is not, flag the item")
             target["bad"] += target["read"]
             target["read"] = 0
+    hosts = {detect(cand, s).header.get("@host") for s in matched} - {None, ""}
+    named = sorted(h for h in hosts if len(h) >= 3 and h in body["test"]["pattern"])
+    if named:
+        target["bad_time"].append(f"the pattern names a host ({named[0]!r}): describe the header's structure, not one "
+                                  f"installation")
+        target["bad"] += target["read"]
+        target["read"] = 0
     ambiguous = _day_month_ambiguous(body, matched)
     if ambiguous:
         target["ambiguous"] = ambiguous
@@ -363,7 +395,8 @@ def apply(e, key: str, item: dict, body: dict, agent: str, note: str = "") -> di
     carried = carry_over(e, learned, agent)
     left = [s for s in item["samples"] if weak(detect(e.snap, s))]
     if left:              # other header formats in the same item: they stay, for the next rule or a human
-        e.store.reopen(QUEUE, key, {**item, "samples": left, "rules_saved": item.get("rules_saved", []) + [rule_id]})
+        e.store.reopen(QUEUE, key, {**item, "samples": left, "not_handled": len(left), "samples_left": len(left),
+                                    "rules_saved": item.get("rules_saved", []) + [rule_id]})
     else:
         e.store.queue_done(QUEUE, key)
     out = {"saved": rule_id, "version": v, "scope": res["scope"], "newly_read": res["newly_read"],

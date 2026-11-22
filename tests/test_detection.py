@@ -459,3 +459,26 @@ def test_harness_writes_several_rules_then_flags_the_rest(tmp_path):
     assert it["status"] == "flagged" and "PKT" in json.loads(it["payload"])["flag_reason"]
     assert detection.scan(eng)["queued"] == 0                              # flagged: nobody pays to ask again
     assert len(fake.requests) == 3
+
+
+# --------------------------------------------------------------------- review 5
+def test_am_pm_left_out_of_the_time_is_refused(tmp_path):
+    eng, key, item = mixed(tmp_path)
+    no_p = {**R_US, "time_format": "%m-%d-%Y %H:%M:%S",
+            "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d\d-\d\d-\d{4} \d\d:\d\d:\d\d) [AP]M " + HOST_APP}}
+    res = detection.evaluate(eng, item, no_p)
+    assert not res["ok"] and "AM/PM" in res["target"]["bad_time"][0]
+
+
+def test_a_pattern_naming_a_host_is_refused(tmp_path):
+    eng, key, item = mixed(tmp_path)
+    narrow = {**R_US, "test": {"kind": "regex", "pattern":
+                               r"^(?P<timestamp>\d\d-\d\d-\d{4} \d\d:\d\d:\d\d [AP]M) (?P<host>app-01) (?P<app>[^\s:\[\]]+)(?:\[(?P<pid>\d+)\])?: (?P<payload>.*)$"}}
+    res = detection.evaluate(eng, item, narrow)
+    assert not res["ok"] and any("names a host" in b for b in res["target"]["bad_time"])
+
+
+def test_samples_show_a_minority_layout(tmp_path):
+    lines = [att(i) for i in range(60)] + [pkt(i) for i in range(2)]      # PKT is 2 of 62 lines
+    eng, items = queued(tmp_path, lines)
+    assert any(" PKT " in s for s in items[0]["payload"]["samples"])
