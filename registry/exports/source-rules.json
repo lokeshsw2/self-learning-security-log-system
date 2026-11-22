@@ -1,0 +1,815 @@
+{
+ "format": "logparser-registry/1",
+ "rules": [
+  {
+   "rule_id": "source:amazon-web-services-aws-cloudtrail-2507269f",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "eventVersion",
+      "eventSource",
+      "eventName",
+      "awsRegion"
+     ]
+    },
+    "product": "AWS CloudTrail",
+    "vendor": "Amazon Web Services"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:amazon-web-services-vpc-flow-logs-13ebc578",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^unstructured\\|-$"
+    },
+    "product": "VPC Flow Logs",
+    "vendor": "Amazon Web Services"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "named from lines"
+   }
+  },
+  {
+   "rule_id": "source:barracuda-networks-barracuda-web-security-gateway-69810e40",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^pri_tag>unstructured\\|barracuda_pqman$"
+    },
+    "product": "Barracuda Web Security Gateway",
+    "vendor": "Barracuda Networks"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "named from lines"
+   }
+  },
+  {
+   "rule_id": "source:brivo-brivo-access-control-00cce1c4",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^pri_only>kv_js\\|",
+     "requires": [
+      "logger_name",
+      "objectType",
+      "credentialId"
+     ],
+     "values": {
+      "logger_name": "^brivo"
+     }
+    },
+    "product": "Brivo Access Control",
+    "vendor": "Brivo"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "Brivo access control syslog logger"
+   }
+  },
+  {
+   "rule_id": "source:brivo-brivo-access-control-7e275acc",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^pri_only>kv_js\\|-$",
+     "requires": [
+      "credentialId",
+      "objectName"
+     ],
+     "values": {
+      "logger_name": "^brivo"
+     }
+    },
+    "product": "Brivo Access Control",
+    "vendor": "Brivo"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "named from lines"
+   }
+  },
+  {
+   "rule_id": "source:cisco-cisco-asa-8195891b",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^cisco>unstructured\\|ASA-[0-9]+$"
+    },
+    "product": "Cisco ASA",
+    "vendor": "Cisco"
+   },
+   "meta": {
+    "check": "claims 9 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "Cisco ASA %ASA- mnemonics, ASA-EDGE-01 hostname"
+   }
+  },
+  {
+   "rule_id": "source:cisco-duo-security-512173f8",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "access_device.browser",
+      "application.key",
+      "event_type"
+     ]
+    },
+    "product": "Duo Security",
+    "vendor": "Cisco"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:cisco-meraki-mx-ef4ea8c1",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog5424>meraki_inner>"
+    },
+    "product": "Meraki MX",
+    "vendor": "Cisco"
+   },
+   "meta": {
+    "check": "claims 4 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "named from lines"
+   }
+  },
+  {
+   "rule_id": "source:cisco-secure-web-appliance-wsa-access-logs-7f88f169",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog3164>unstructured\\|accesslogs$"
+    },
+    "product": "Secure Web Appliance (WSA) access logs",
+    "vendor": "Cisco"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "Cisco WSA accesslogs format"
+   }
+  },
+  {
+   "rule_id": "source:citrix-netscaler-07a1cfa4",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^cef\\|Citrix-NetScaler$"
+    },
+    "product": "NetScaler",
+    "vendor": "Citrix"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "CEF Citrix NetScaler"
+   }
+  },
+  {
+   "rule_id": "source:cloudflare-cloudflare-logpush-firewall-events-71fe3042",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "ClientRequestHost",
+      "ClientASN",
+      "ClientIPClass",
+      "Source"
+     ]
+    },
+    "product": "Cloudflare Logpush (firewall events)",
+    "vendor": "Cloudflare"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:crowdstrike-falcon-platform-f6c429e4",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "event_simpleName",
+      "aip",
+      "ContextTimeStamp"
+     ]
+    },
+    "product": "Falcon Platform",
+    "vendor": "CrowdStrike"
+   },
+   "meta": {
+    "check": "claims 2 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:cyberark-vault-f8bf7d19",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^cef\\|Cyber-Ark-Vault$"
+    },
+    "product": "Vault",
+    "vendor": "CyberArk"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "CEF Cyber-Ark Vault"
+   }
+  },
+  {
+   "rule_id": "source:cybonet-cyfox-6a0f9097",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^cef\\|CyboNet-CyFox$"
+    },
+    "product": "CyFox",
+    "vendor": "CyboNet"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "CEF CyboNet CyFox"
+   }
+  },
+  {
+   "rule_id": "source:fortinet-fortigate-4232a7eb",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^pri_only>kv\\|",
+     "requires": [
+      "devname",
+      "devid",
+      "logid",
+      "type",
+      "subtype"
+     ],
+     "values": {
+      "devid": "^FG"
+     }
+    },
+    "product": "FortiGate",
+    "vendor": "Fortinet"
+   },
+   "meta": {
+    "check": "claims 2 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "FortiGate (devid FG..., logid)"
+   }
+  },
+  {
+   "rule_id": "source:github-github-enterprise-audit-log-db08174c",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "@timestamp",
+      "action",
+      "actor",
+      "actor_id",
+      "operation_type",
+      "org_id"
+     ]
+    },
+    "product": "GitHub Enterprise audit log",
+    "vendor": "GitHub"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:kaspersky-kaspersky-endpoint-security-kes-dee15d5b",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog5424_event>kv\\|KES\\|"
+    },
+    "product": "Kaspersky Endpoint Security (KES)",
+    "vendor": "Kaspersky"
+   },
+   "meta": {
+    "check": "claims 11 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "Kaspersky Endpoint Security KES events"
+   }
+  },
+  {
+   "rule_id": "source:linux-linux-host-syslog-gralinuxagent-efaba6d3",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json_wrap>syslog_iso>[a-z_]+\\|(sshd-session|sudo|useradd|CRON|auditd|bash|crontab|passwd|systemd)$",
+     "values": {
+      "@GraSource": "^GraLinuxAgent$"
+     }
+    },
+    "product": "Linux host syslog (GraLinuxAgent)",
+    "vendor": "Linux"
+   },
+   "meta": {
+    "check": "claims 11 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "Linux host messages via GraLinuxAgent"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-microsoft-365-unified-audit-log-cef4dcfd",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "CreationTime",
+      "Operation",
+      "Workload",
+      "UserId"
+     ]
+    },
+    "product": "Microsoft 365 unified audit log",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 2 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-microsoft-defender-xdr-alerts-graph-security-4432b529",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "alertWebUrl",
+      "incidentId",
+      "detectionSource",
+      "detectorId"
+     ]
+    },
+    "product": "Microsoft Defender XDR alerts (Graph Security)",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-microsoft-defender-xdr-incidents-graph-security-25790dfd",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "incidentWebUrl",
+      "lastModifiedBy",
+      "displayName",
+      "tenantId"
+     ]
+    },
+    "product": "Microsoft Defender XDR incidents (Graph Security)",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-microsoft-entra-id-audit-logs-4a2a5bb0",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "activityDisplayName",
+      "activityDateTime",
+      "loggedByService",
+      "category"
+     ]
+    },
+    "product": "Microsoft Entra ID audit logs",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-microsoft-entra-id-diagnostic-logs-azure-monitor-ea6130f8",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "resourceId",
+      "operationName",
+      "operationVersion",
+      "tenantId",
+      "callerIpAddress"
+     ],
+     "values": {
+      "resourceId": "microsoft\\.aadiam"
+     }
+    },
+    "product": "Microsoft Entra ID diagnostic logs (Azure Monitor)",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-microsoft-entra-id-sign-in-logs-c5b8953d",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "conditionalAccessStatus",
+      "userPrincipalName",
+      "appDisplayName",
+      "clientAppUsed"
+     ]
+    },
+    "product": "Microsoft Entra ID sign-in logs",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-sysinternals-sysmon-windows-event-log-4956c16f",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "EventID",
+      "SourceName",
+      "Channel"
+     ],
+     "values": {
+      "SourceName": "^Microsoft-Windows-Sysmon$"
+     }
+    },
+    "product": "Sysinternals Sysmon (Windows event log)",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-windows-server-dhcp-audit-log-616f9006",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog5424>csv\\|",
+     "values": {
+      "c0": "^\\d{1,2}$",
+      "c1": "^\\d{2}/\\d{2}/\\d{2}$",
+      "c2": "^\\d{2}:\\d{2}:\\d{2}$",
+      "c3": "^[A-Za-z][A-Za-z0-9 ()._,:-]*$"
+     }
+    },
+    "product": "Windows Server DHCP audit log",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-redo2",
+    "note": "DHCP audit log CSV: event id, mm/dd/yy, time, description"
+   }
+  },
+  {
+   "rule_id": "source:microsoft-windows-server-dns-debug-log-6db0ec10",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog5424>unstructured\\|-$"
+    },
+    "product": "Windows Server DNS debug log",
+    "vendor": "Microsoft"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "named from lines"
+   }
+  },
+  {
+   "rule_id": "source:mimecast-mimecast-email-security-25214edf",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "identifier",
+      "logType"
+     ],
+     "values": {
+      "identifier": "^Mimecast"
+     }
+    },
+    "product": "Mimecast Email Security",
+    "vendor": "Mimecast"
+   },
+   "meta": {
+    "check": "claims 4 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:netskope-netskope-security-cloud-627eef2c",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "appcategory",
+      "userkey",
+      "_skip_geoip_lookup",
+      "type"
+     ]
+    },
+    "product": "Netskope Security Cloud",
+    "vendor": "Netskope"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:okta-okta-system-log-af74d42e",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^embedded_json\\|",
+     "requires": [
+      "eventType",
+      "actor.alternateId"
+     ],
+     "values": {
+      "eventType": "^(user|system|app|group|policy|security)\\."
+     }
+    },
+    "product": "Okta System Log",
+    "vendor": "Okta"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  },
+  {
+   "rule_id": "source:palo-alto-networks-pan-os-32acfafa",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog3164>unstructured\\|,,[0-9]+,SYSTEM,[A-Za-z0-9_-]+,[0-9]*,,,[A-Za-z0-9_-]+,,,,[a-z]+,(informational|low|medium|high|critical),"
+    },
+    "product": "PAN-OS",
+    "vendor": "Palo Alto Networks"
+   },
+   "meta": {
+    "check": "claims 2 sources, every sampled line",
+    "created_by": "namer-redo",
+    "note": "PAN-OS SYSTEM log CSV prefix in program part"
+   }
+  },
+  {
+   "rule_id": "source:palo-alto-networks-pan-os-60c0301b",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog3164_notag>csv\\|",
+     "requires": [
+      "c3"
+     ],
+     "values": {
+      "c3": "^(TRAFFIC|THREAT|SYSTEM|CONFIG|GLOBALPROTECT|USERID|HIPMATCH|URL|DECRYPTION|AUTHENTICATION)$"
+     }
+    },
+    "product": "PAN-OS",
+    "vendor": "Palo Alto Networks"
+   },
+   "meta": {
+    "check": "claims 2 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "PAN-OS CSV syslog (TRAFFIC/THREAT/SYSTEM, PA-5220 host)"
+   }
+  },
+  {
+   "rule_id": "source:sophos-sophos-firewall-xgs-3c8752d9",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^pri_only>kv\\|",
+     "requires": [
+      "device_name",
+      "device_model",
+      "device_serial_id",
+      "log_id",
+      "log_type"
+     ],
+     "values": {
+      "device_model": "^(XG|XGS|SG)"
+     }
+    },
+    "product": "Sophos Firewall (XGS)",
+    "vendor": "Sophos"
+   },
+   "meta": {
+    "check": "claims 2 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "Sophos XGS firewall (device_model XGS5500)"
+   }
+  },
+  {
+   "rule_id": "source:trend-micro-apex-central-2895baf4",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^cef\\|Trend Micro-Apex Central$"
+    },
+    "product": "Apex Central",
+    "vendor": "Trend Micro"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-cef",
+    "note": "CEF Trend Micro Apex Central"
+   }
+  },
+  {
+   "rule_id": "source:vmware-vcenter-esx-agent-manager-access-log-1cf60c17",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog5424>unstructured\\|eam-access$"
+    },
+    "product": "vCenter ESX Agent Manager access log",
+    "vendor": "VMware"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-text",
+    "note": "named from lines"
+   }
+  },
+  {
+   "rule_id": "source:watchguard-firebox-5451d7ac",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog3164_notag>unstructured",
+     "text": "\\bhttp-proxy\\[\\d+\\]: msg_id=\"[0-9A-F]{4}-[0-9A-F]{4}\" (Allow|Deny) "
+    },
+    "product": "Firebox",
+    "vendor": "WatchGuard"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-redo2",
+    "note": "WatchGuard Firebox http-proxy msg_id format"
+   }
+  },
+  {
+   "rule_id": "source:watchguard-firebox-caa8f763",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^syslog3164_notag>kv\\|",
+     "requires": [
+      "msg_id",
+      "proxy_act"
+     ],
+     "values": {
+      "msg": "^Proxy(Allow|Deny)",
+      "msg_id": "^[0-9A-F]{4}-[0-9A-F]{4}$"
+     }
+    },
+    "product": "Firebox",
+    "vendor": "WatchGuard"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-redo",
+    "note": "WatchGuard proxy msg_id"
+   }
+  },
+  {
+   "rule_id": "source:zscaler-zscaler-internet-access-nss-0088ee02",
+   "version": 1,
+   "status": "active",
+   "body": {
+    "match": {
+     "bucket": "^json\\|",
+     "requires": [
+      "sourcetype",
+      "event.action"
+     ],
+     "values": {
+      "sourcetype": "^zscaler"
+     }
+    },
+    "product": "Zscaler Internet Access (NSS)",
+    "vendor": "Zscaler"
+   },
+   "meta": {
+    "check": "claims 1 sources, every sampled line",
+    "created_by": "namer-json",
+    "note": "named from record fields"
+   }
+  }
+ ]
+}
