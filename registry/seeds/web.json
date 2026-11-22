@@ -1,0 +1,334 @@
+{
+ "format": "logparser-registry/1",
+ "rules": [
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "combined access log",
+     "product": "HTTP server"
+    },
+    "mapping": "mapping:seed-http-access",
+    "pattern": "^(?:(?P<source_address>(?:(?:(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))|(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?))) (?:-|(?P<apache_access_user_identity>(?:(?:[a-zA-Z0-9!#$%&'*+\\-/=?^_`{|}~.]{1,64})@(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?))|(?:(?:[a-zA-Z0-9._-]+)))) (?:-|(?P<user_name>(?:(?:[a-zA-Z0-9!#$%&'*+\\-/=?^_`{|}~.]{1,64})@(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?))|(?:(?:[a-zA-Z0-9._-]+)))) \\[(?P<timestamp>(?:(?:(?:0[1-9])|(?:[12][0-9])|(?:3[01])|[1-9]))/(?:\\b(?:[Jj]an(?:uary|uar)?|[Ff]eb(?:ruary|ruar)?|[Mm](?:a|\u00e4)?r(?:ch|z)?|[Aa]pr(?:il)?|[Mm]a(?:y|i)?|[Jj]un(?:e|i)?|[Jj]ul(?:y|i)?|[Aa]ug(?:ust)?|[Ss]ep(?:tember)?|[Oo](?:c|k)?t(?:ober)?|[Nn]ov(?:ember)?|[Dd]e(?:c|z)(?:ember)?)\\b)/(?:\\d{2,4}):(?:(?:2[0123]|[01]?[0-9]):[0-5][0-9]:(?:[0-5]?[0-9]|60)(?:[:.,][0-9]+)?) (?:(?:[+-]?(?:[0-9]+))))\\] \"(?:(?P<http_request_method>\\w+) (?P<url_original>\\S+)(?: HTTP/(?P<http_version>(?:(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)))))?|(?:.*?))\" (?:-|(?P<http_response_status_code>(?:[+-]?(?:[0-9]+)))) (?:-|(?P<http_response_body_bytes>(?:[+-]?(?:[0-9]+))))) \"(?:-|(?P<http_request_referrer>.*?))\" \"(?:-|(?P<user_agent_original>.*?))\"$",
+    "scope": {
+     "bucket": "unstructured\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok HTTPD_COMBINEDLOG",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-httpd-combined"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "common access log",
+     "product": "HTTP server"
+    },
+    "mapping": "mapping:seed-http-access",
+    "pattern": "^(?P<source_address>(?:(?:(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))|(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?))) (?:-|(?P<apache_access_user_identity>(?:(?:[a-zA-Z0-9!#$%&'*+\\-/=?^_`{|}~.]{1,64})@(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?))|(?:(?:[a-zA-Z0-9._-]+)))) (?:-|(?P<user_name>(?:(?:[a-zA-Z0-9!#$%&'*+\\-/=?^_`{|}~.]{1,64})@(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?))|(?:(?:[a-zA-Z0-9._-]+)))) \\[(?P<timestamp>(?:(?:(?:0[1-9])|(?:[12][0-9])|(?:3[01])|[1-9]))/(?:\\b(?:[Jj]an(?:uary|uar)?|[Ff]eb(?:ruary|ruar)?|[Mm](?:a|\u00e4)?r(?:ch|z)?|[Aa]pr(?:il)?|[Mm]a(?:y|i)?|[Jj]un(?:e|i)?|[Jj]ul(?:y|i)?|[Aa]ug(?:ust)?|[Ss]ep(?:tember)?|[Oo](?:c|k)?t(?:ober)?|[Nn]ov(?:ember)?|[Dd]e(?:c|z)(?:ember)?)\\b)/(?:\\d{2,4}):(?:(?:2[0123]|[01]?[0-9]):[0-5][0-9]:(?:[0-5]?[0-9]|60)(?:[:.,][0-9]+)?) (?:(?:[+-]?(?:[0-9]+))))\\] \"(?:(?P<http_request_method>\\w+) (?P<url_original>\\S+)(?: HTTP/(?P<http_version>(?:(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)))))?|(?:.*?))\" (?:-|(?P<http_response_status_code>(?:[+-]?(?:[0-9]+)))) (?:-|(?P<http_response_body_bytes>(?:[+-]?(?:[0-9]+))))$",
+    "scope": {
+     "bucket": "unstructured\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok HTTPD_COMMONLOG",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-httpd-common"
+  },
+  {
+   "body": {
+    "class": "http_activity",
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "timestamp",
+      "note": "request time in CLF format",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "http_request_method",
+      "note": "HTTP method to activity",
+      "to": "activity_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "connect": 1,
+         "delete": 2,
+         "get": 3,
+         "head": 4,
+         "options": 5,
+         "patch": 9,
+         "post": 6,
+         "put": 7,
+         "trace": 8
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "http_request_method",
+      "note": "request method",
+      "to": "http_request.http_method",
+      "transform": {
+       "fn": "upper"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "url_original",
+      "note": "request target; usually a path with optional query string",
+      "to": "http_request.url.path"
+     },
+     {
+      "confidence": "high",
+      "from": "http_version",
+      "note": "HTTP version",
+      "to": "http_request.version"
+     },
+     {
+      "confidence": "high",
+      "from": "http_request_referrer",
+      "note": "Referer header",
+      "to": "http_request.referrer"
+     },
+     {
+      "confidence": "high",
+      "from": "user_agent_original",
+      "note": "User-Agent header",
+      "to": "http_request.user_agent"
+     },
+     {
+      "confidence": "high",
+      "from": "http_response_status_code",
+      "note": "status code",
+      "to": "http_response.code"
+     },
+     {
+      "confidence": "medium",
+      "from": "http_response_body_bytes",
+      "note": "response size in bytes",
+      "to": "http_response.length"
+     },
+     {
+      "confidence": "high",
+      "from": "source_address",
+      "note": "client address when it is an IP",
+      "to": "src_endpoint.ip",
+      "when": {
+       "field": "source_address",
+       "matches": "^(?:\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+)$"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "source_address",
+      "note": "client address when it is a host name",
+      "to": "src_endpoint.hostname",
+      "when": {
+       "field": "source_address",
+       "matches": "[G-Zg-z]"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "user_name",
+      "note": "authenticated user (third CLF field)",
+      "to": "actor.user.name"
+     },
+     {
+      "confidence": "medium",
+      "from": "http_response_status_code",
+      "note": "1xx-3xx Success, 4xx-5xx Failure",
+      "to": "status_id",
+      "transform": {
+       "args": {
+        "map": {},
+        "patterns": {
+         "^[123]": 1,
+         "^[45]": 2
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     }
+    ],
+    "profiles": [
+     "host"
+    ]
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "project licence",
+    "note": "Apache/nginx common and combined log format to HTTP Activity",
+    "source": "this project"
+   },
+   "rule_id": "mapping:seed-http-access"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "HAProxy HTTP log",
+     "product": "HAProxy"
+    },
+    "pattern": "^(?P<source_address>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))):(?P<source_port>(?:[+-]?(?:[0-9]+))) \\[(?P<haproxy_request_date>(?:(?:(?:0[1-9])|(?:[12][0-9])|(?:3[01])|[1-9]))/(?:\\b(?:[Jj]an(?:uary|uar)?|[Ff]eb(?:ruary|ruar)?|[Mm](?:a|\u00e4)?r(?:ch|z)?|[Aa]pr(?:il)?|[Mm]a(?:y|i)?|[Jj]un(?:e|i)?|[Jj]ul(?:y|i)?|[Aa]ug(?:ust)?|[Ss]ep(?:tember)?|[Oo](?:c|k)?t(?:ober)?|[Nn]ov(?:ember)?|[Dd]e(?:c|z)(?:ember)?)\\b)/(?:\\d{2,4}):(?:(?:(?:2[0123]|[01]?[0-9])):(?:(?:[0-5][0-9]))(?::(?:(?:(?:[0-5]?[0-9]|60)(?:[:.,][0-9]+)?)))).(?:(?:[+-]?(?:[0-9]+))))\\] (?P<haproxy_frontend_name>\\S+) (?P<haproxy_backend_name>\\S+)/(?:<NOSRV>|(?P<haproxy_server_name>\\S+)) (?:-1|(?P<haproxy_http_request_time_wait_ms>(?:[+-]?(?:[0-9]+))))/(?:-1|(?P<haproxy_total_waiting_time_ms>(?:[+-]?(?:[0-9]+))))/(?:-1|(?P<haproxy_connection_wait_time_ms>(?:[+-]?(?:[0-9]+))))/(?:-1|(?P<haproxy_http_request_time_wait_without_data_ms>(?:[+-]?(?:[0-9]+))))/(?P<haproxy_total_time_ms>\\S+) (?P<http_response_status_code>(?:[+-]?(?:[0-9]+))) (?P<source_bytes>(?:[+-]?(?:[0-9]+))) (?:-|(?P<haproxy_http_request_captured_cookie>.*?)) (?:-|(?P<haproxy_http_response_captured_cookie>.*?)) (?P<haproxy_termination_state>\\S+) (?P<haproxy_connections_active>(?:[+-]?(?:[0-9]+)))/(?P<haproxy_connections_frontend>(?:[+-]?(?:[0-9]+)))/(?P<haproxy_connections_backend>(?:[+-]?(?:[0-9]+)))/(?P<haproxy_connections_server>(?:[+-]?(?:[0-9]+)))/(?P<haproxy_connections_retries>(?:[+-]?(?:[0-9]+))) (?P<haproxy_server_queue>(?:[+-]?(?:[0-9]+)))/(?P<haproxy_backend_queue>(?:[+-]?(?:[0-9]+)))(?: \\{(?:(?P<haproxy_http_request_captured_headers>.*?))\\}(?: \\{(?:(?P<haproxy_http_response_captured_headers>.*?))\\})?)?(?: \"(?:(?:<BADREQ>|(?:(?P<http_request_method>\\w+) (?P<url_original>(?:(?P<url_scheme>[A-Za-z]([A-Za-z0-9+\\-.]+)+)://)?(?:(?P<url_username>(?:[a-zA-Z0-9._-]+))(?::[^@]*)?@)?(?:(?P<url_domain>(?:(?:(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))|(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?)))(?::(?P<url_port>[1-9][0-9]*))?)?(?:(?P<url_path>(?:/[A-Za-z0-9$.+!*'(){},~:;=@#%&_\\-]*)+)(?:\\?(?P<url_query>[A-Za-z0-9$.+!*'|(){},~@#%&/=:;_?\\-\\[\\]<>]*))?)?)(?: HTTP/(?P<http_version>(?:(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)))))?)))\"?)?$",
+    "scope": {
+     "bucket": "unstructured\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok HAPROXYHTTPBASE",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-haproxy-http"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "Squid access log",
+     "product": "Squid"
+    },
+    "mapping": "mapping:seed-squid-access",
+    "pattern": "^(?P<timestamp>(?:(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+))))\\s+(?P<squid_request_duration>(?:(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+))))\\s(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))\\s(?P<event_action>\\w+)/(?:(?:(?P<http_response_status_code>[1-9][0-9]*)|0|000))\\s(?P<http_response_bytes>(?:[+-]?(?:[0-9]+)))\\s(?P<http_request_method>\\w+)\\s(?P<url_original>\\S+)\\s(?:-|(?P<user_name>\\S+))\\s(?P<squid_hierarchy_code>\\w+)/(?:-|(?P<destination_address>(?:(?:(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))|(?:[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?))))\\s(?:-|(?P<http_response_mime_type>\\S+))$",
+    "scope": {
+     "bucket": "unstructured\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok SQUID3",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-squid-access"
+  },
+  {
+   "body": {
+    "class": "http_activity",
+    "constants": {
+     "metadata.product.name": "Squid"
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "timestamp",
+      "note": "epoch seconds with milliseconds",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "http_request_method",
+      "note": "HTTP method to activity",
+      "to": "activity_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "connect": 1,
+         "delete": 2,
+         "get": 3,
+         "head": 4,
+         "options": 5,
+         "patch": 9,
+         "post": 6,
+         "put": 7,
+         "trace": 8
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "http_request_method",
+      "note": "request method",
+      "to": "http_request.http_method"
+     },
+     {
+      "confidence": "high",
+      "from": "url_original",
+      "note": "requested URL",
+      "to": "http_request.url.url_string"
+     },
+     {
+      "confidence": "high",
+      "from": "http_response_status_code",
+      "note": "status code after the slash",
+      "to": "http_response.code"
+     },
+     {
+      "confidence": "medium",
+      "from": "http_response_bytes",
+      "note": "bytes sent to the client",
+      "to": "http_response.length"
+     },
+     {
+      "confidence": "high",
+      "from": "http_response_mime_type",
+      "note": "MIME type",
+      "to": "http_response.content_type"
+     },
+     {
+      "confidence": "high",
+      "from": "source_ip",
+      "note": "client address",
+      "to": "src_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": "destination_address",
+      "note": "origin server address",
+      "to": "dst_endpoint.ip",
+      "when": {
+       "field": "destination_address",
+       "matches": "^(?:\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+)$"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "user_name",
+      "note": "ident/user field",
+      "to": "actor.user.name"
+     },
+     {
+      "confidence": "high",
+      "from": "squid_request_duration",
+      "note": "elapsed milliseconds",
+      "to": "duration"
+     }
+    ],
+    "profiles": [
+     "host"
+    ]
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "project licence",
+    "note": "Squid native access log to HTTP Activity",
+    "source": "this project"
+   },
+   "rule_id": "mapping:seed-squid-access"
+  }
+ ]
+}

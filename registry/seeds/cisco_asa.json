@@ -1,0 +1,980 @@
+{
+ "format": "logparser-registry/1",
+ "rules": [
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 104001",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Switching to ACTIVE - (?P<event_reason>.*)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:104001)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW104001",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-104001"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 104002",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Switching to STANDBY - (?P<event_reason>.*)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:104002)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW104002",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-104002"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 104003",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Switching to FAILED\\.$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:104003)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW104003",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-104003"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 104004",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Switching to OK\\.$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:104004)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW104004",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-104004"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 105003",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Monitoring on [Ii]nterface (?P<network_interface_name>\\S+) waiting$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:105003)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW105003",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-105003"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 105004",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Monitoring on [Ii]nterface (?P<network_interface_name>\\S+) normal$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:105004)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW105004",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-105004"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 105005",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Lost Failover communications with mate on [Ii]nterface (?P<network_interface_name>\\S+)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:105005)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW105005",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-105005"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 105008",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Testing [Ii]nterface (?P<network_interface_name>\\S+)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:105008)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW105008",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-105008"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 105009",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\((?:Primary|Secondary)\\) Testing on [Ii]nterface (?P<network_interface_name>\\S+) (?:Passed|Failed)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:105009)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW105009",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-105009"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106001",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_network_direction>Inbound|inbound|Outbound|outbound) (?P<cisco_asa_network_transport>\\w+) connection (?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+))) to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+))) flags (?P<cisco_asa_tcp_flags>.*?) on interface (?P<observer_egress_interface_name>\\S+)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106001)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106001",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106001"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106006/106007/106010",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_direction>Inbound|inbound|Outbound|outbound) (?P<cisco_asa_network_transport>\\w+) (?:from|src) (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+)))(?:\\((?P<source_user_name>.*?)\\))? (?:to|dst) (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+)))(?:\\((?P<destination_user_name>.*?)\\))? (?:(?:on interface (?P<observer_egress_interface_name>\\S+))|(?:due to (?P<event_reason>Duplicate TCP SYN|Failed to locate egress interface|Invalid transport field|No matching connection|DNS Response|DNS Query|(?:(?:\\w+)\\s*)*)))$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106006|106007|106010)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106006_106007_106010",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106006-106007-106010"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106014",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_direction>Inbound|inbound|Outbound|outbound) (?P<cisco_asa_network_transport>\\w+) src (?:(?P<observer_ingress_interface_name>\\S+):(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))(?:\\((?P<source_user_name>.*?)\\))?) dst (?:(?P<observer_egress_interface_name>\\S+):(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))(?:\\((?P<destination_user_name>.*?)\\))?)\\s?\\(type (?P<cisco_asa_icmp_type>(?:[+-]?(?:[0-9]+))), code (?P<cisco_asa_icmp_code>(?:[+-]?(?:[0-9]+)))\\)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106014)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106014",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106014"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106015",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_transport>\\w+) \\((?P<cisco_asa_rule_name>.*?)\\) from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+))) to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+))) flags (?P<cisco_asa_tcp_flags>.*?) on interface (?P<observer_egress_interface_name>\\S+)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106015)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106015",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106015"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106021",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_transport>\\w+) reverse path check from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) on interface (?P<observer_egress_interface_name>\\S+)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106021)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106021",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106021"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106023",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted)(?: protocol)? (?P<cisco_asa_network_transport>\\w+) src (?:(?P<observer_ingress_interface_name>\\S+):(?:(?:(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))))|(?:(?P<source_address>[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?)))(?:/(?P<source_port>(?:[+-]?(?:[0-9]+))))?(?:\\((?P<source_user_name>.*?)\\))?) dst (?:(?P<observer_egress_interface_name>\\S+):(?:(?:(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))))|(?:(?P<destination_address>[0-9A-Za-z][0-9A-Za-z\\-]{0,62}(?:\\.[0-9A-Za-z][0-9A-Za-z\\-]{0,62})*\\.?)))(?:/(?P<destination_port>(?:[+-]?(?:[0-9]+))))?(?:\\((?P<destination_user_name>.*?)\\))?)( \\(type (?P<cisco_asa_icmp_type>(?:[+-]?(?:[0-9]+))), code (?P<cisco_asa_icmp_code>(?:[+-]?(?:[0-9]+)))\\))? by access-group \"?(?P<cisco_asa_rule_name>.*?)\"? \\[(?P<cisco_asa_hashcode1>.*?), (?P<cisco_asa_hashcode2>.*?)\\]$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106023)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106023",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106023"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106100",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^access-list (?P<cisco_asa_rule_name>\\S+) (?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_transport>\\w+) (?P<observer_ingress_interface_name>.*?)/(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))\\((?P<source_port>(?:[+-]?(?:[0-9]+)))\\)(?:\\((?P<source_user_name>.*?)\\))? -> (?P<observer_egress_interface_name>.*?)/(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))\\((?P<destination_port>(?:[+-]?(?:[0-9]+)))\\)(?:\\((?P<source_user_name__2>.*?)\\))? hit-cnt (?P<cisco_asa_hit_count>(?:[+-]?(?:[0-9]+))) (?:first hit|(?:(?:[+-]?(?:[0-9]+)))-second interval) \\[(?P<cisco_asa_hashcode1>.*?), (?P<cisco_asa_hashcode2>.*?)\\]$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106100)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106100",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106100"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 106100",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^access-list (?P<cisco_asa_rule_name>\\S+) (?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_transport>\\w+) for user '(?P<user_name>.*?)' (?P<observer_ingress_interface_name>.*?)/(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))\\((?P<source_port>(?:[+-]?(?:[0-9]+)))\\) -> (?P<observer_egress_interface_name>.*?)/(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))\\((?P<destination_port>(?:[+-]?(?:[0-9]+)))\\) (?:hit-cnt (?P<cisco_asa_hit_count>(?:[+-]?(?:[0-9]+))) (?:first hit|(?P<cisco_asa_interval>(?:[+-]?(?:[0-9]+)))-second interval)) \\[(?P<cisco_asa_hashcode1>.*?), (?P<cisco_asa_hashcode2>.*?)\\]$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:106100)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW106100_2_3",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-106100"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 110002",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<event_reason>Duplicate TCP SYN|Failed to locate egress interface|Invalid transport field|No matching connection|DNS Response|DNS Query|(?:(?:\\w+)\\s*)*) for (?P<cisco_asa_network_transport>\\w+) from (?P<observer_ingress_interface_name>.*?):(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+))) to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+)))$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:110002)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW110002",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-110002"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 302010",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^(?P<cisco_asa_connections_in_use>(?:[+-]?(?:[0-9]+))) in use, (?P<cisco_asa_connections_most_used>(?:[+-]?(?:[0-9]+))) most used$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:302010)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW302010",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-302010"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 302013/302014/302015/302016",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted)(?: (?P<cisco_asa_network_direction>Inbound|inbound|Outbound|outbound))? (?P<cisco_asa_network_transport>\\w+) connection (?P<cisco_asa_connection_id>(?:[+-]?(?:[0-9]+))) for (?P<observer_ingress_interface_name>\\S+):(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+)))(?: \\((?P<source_nat_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_nat_port>(?:[+-]?(?:[0-9]+)))\\))?(?:\\((?P<source_user_name>.*?)\\))? to (?P<observer_egress_interface_name>\\S+):(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+)))( \\((?P<destination_nat_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_nat_port>(?:[+-]?(?:[0-9]+)))\\))?(?:\\((?P<destination_user_name>.*?)\\))?( duration (?P<cisco_asa_duration>(?:2[0123]|[01]?[0-9]):[0-5][0-9]:(?:[0-5]?[0-9]|60)(?:[:.,][0-9]+)?) bytes (?P<network_bytes>(?:[+-]?(?:[0-9]+))))?(?: (?P<event_reason>Duplicate TCP SYN|Failed to locate egress interface|Invalid transport field|No matching connection|DNS Response|DNS Query|(?:(?:\\w+)\\s*)*))?(?: \\((?P<user_name>.*?)\\))?$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:302013|302014|302015|302016)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW302013_302014_302015_302016",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-302013-302014-302015-302016"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 302020/302021",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted)(?: (?P<cisco_asa_network_direction>Inbound|inbound|Outbound|outbound))? (?P<cisco_asa_network_transport>\\w+) connection for faddr (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<cisco_asa_icmp_seq>(?:[+-]?(?:[0-9]+)))(?:\\((?P<destination_user_name>.*?)\\))? gaddr (?P<source_nat_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<cisco_asa_icmp_type>(?:[+-]?(?:[0-9]+))) laddr (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?:(?:[+-]?(?:[0-9]+)))(?: \\((?P<source_user_name>.*?)\\))?$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:302020|302021)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW302020_302021",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-302020-302021"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 304001",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))(?:\\((?P<source_user_name>.*?)\\))? Accessed URL (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))):(?P<url_original>.*)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:304001)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW304001",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-304001"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 305011",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?:static|dynamic) (?P<cisco_asa_network_transport>\\w+) translation from (?P<observer_ingress_interface_name>.*?):(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))(/(?P<source_port>(?:[+-]?(?:[0-9]+))))?(?:\\((?P<source_user_name>.*?)\\))? to (?P<observer_egress_interface_name>.*?):(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+)))$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:305011)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW305011",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-305011"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 313001/313004/313008",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_transport>\\w+) type=(?P<cisco_asa_icmp_type>(?:[+-]?(?:[0-9]+))), code=(?P<cisco_asa_icmp_code>(?:[+-]?(?:[0-9]+))) from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) on interface (?P<observer_egress_interface_name>\\S+)(?: to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))))?$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:313001|313004|313008)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW313001_313004_313008",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-313001-313004-313008"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 313005",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<event_reason>Duplicate TCP SYN|Failed to locate egress interface|Invalid transport field|No matching connection|DNS Response|DNS Query|(?:(?:\\w+)\\s*)*) for (?P<cisco_asa_network_transport>\\w+) error message: (?:\\w+) src (?:(?P<observer_ingress_interface_name>\\S+):(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))(?:\\((?P<source_user_name>.*?)\\))?) dst (?:(?P<observer_egress_interface_name>\\S+):(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))(?:\\((?P<destination_user_name>.*?)\\))?) \\(type (?P<cisco_asa_icmp_type>(?:[+-]?(?:[0-9]+))), code (?P<cisco_asa_icmp_code>(?:[+-]?(?:[0-9]+)))\\) on (?:\\S+) interface\\.\\s+Original IP payload: (?P<cisco_asa_original_ip_payload_network_transport>\\w+) src (?P<cisco_asa_original_ip_payload_source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<cisco_asa_original_ip_payload_source_port>(?:[+-]?(?:[0-9]+)))(?:\\((?P<cisco_asa_original_ip_payload_source_user_name>.*?)\\))? dst (?P<cisco_asa_original_ip_payload_destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<cisco_asa_original_ip_payload_destination_port>(?:[+-]?(?:[0-9]+)))(?:\\((?P<cisco_asa_original_ip_payload_destination_user_name>.*?)\\))?$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:313005)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW313005",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-313005"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 321001",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^Resource '(?P<cisco_asa_resource_name>.*?)' limit of (?P<cisco_asa_resource_limit>[1-9][0-9]*) reached for system$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:321001)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW321001",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-321001"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 402117",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_network_type>\\w+): Received a non-IPSec packet \\(protocol=\\s?(?P<cisco_asa_network_transport>\\w+)\\) from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))\\.?$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:402117)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW402117",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-402117"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 402119",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_network_type>\\w+): Received an (?P<cisco_asa_ipsec_protocol>\\w+) packet \\(SPI=\\s?(?P<cisco_asa_ipsec_spi>.*?), sequence number=\\s?(?P<cisco_asa_ipsec_seq_num>.*?)\\) from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) \\(user=\\s?(?P<source_user_name>.*?)\\) to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) that failed anti-replay checking\\.?$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:402119)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW402119",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-402119"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 419001",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) (?P<cisco_asa_network_transport>\\w+) packet from (?P<observer_ingress_interface_name>\\S+):(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+))) to (?P<observer_egress_interface_name>\\S+):(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+))), reason: (?P<event_reason>.*)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:419001)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW419001",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-419001"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 419002",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<event_reason>Duplicate TCP SYN|Failed to locate egress interface|Invalid transport field|No matching connection|DNS Response|DNS Query|(?:(?:\\w+)\\s*)*) from (?P<observer_ingress_interface_name>.*?):(?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+))) to (?P<observer_egress_interface_name>.*?):(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+))) with different initial sequence number$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:419002)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW419002",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-419002"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 500004",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<event_reason>Duplicate TCP SYN|Failed to locate egress interface|Invalid transport field|No matching connection|DNS Response|DNS Query|(?:(?:\\w+)\\s*)*) for protocol=(?P<cisco_asa_network_transport>\\w+), from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+))) to (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+)))$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:500004)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW500004",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-500004"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 602303/602304",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_network_type>\\w+): An (?P<cisco_asa_network_direction>Inbound|inbound|Outbound|outbound) (?P<cisco_asa_ipsec_tunnel_type>.*?) SA \\(SPI=\\s?(?P<cisco_asa_ipsec_spi>.*?)\\) between (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) and (?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))) \\(user=\\s?(?P<source_user_name>.*?)\\) has been (?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted)$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:602303|602304)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW602303_602304",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-602303-602304"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 710001/710002/710003/710005/710006",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "mapping": "mapping:seed-cisco-asa-network",
+    "pattern": "^(?P<cisco_asa_network_transport>\\w+) (?:request|access) (?P<cisco_asa_outcome>Built|Teardown|Deny|Denied|denied|requested|permitted|denied by ACL|discarded|est-allowed|Dropping|created|deleted) from (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<source_port>(?:[+-]?(?:[0-9]+))) to (?P<observer_egress_interface_name>.*?):(?P<destination_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3})))/(?P<destination_port>(?:[+-]?(?:[0-9]+)))$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:710001|710002|710003|710005|710006)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW710001_710002_710003_710005_710006",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-710001-710002-710003-710005-710006"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 713172",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^Group = (?P<cisco_asa_source_group>.*?), IP = (?P<source_ip>(?:(?:(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f.]{0,15})|(?:(?:\\d{1,3}\\.){3}\\d{1,3}))), Automatic NAT Detection Status:\\s+Remote end\\s*(?P<cisco_asa_remote_nat>.*?)\\s*behind a NAT device\\s+This\\s+end\\s*(?P<cisco_asa_local_nat>.*?)\\s*behind a NAT device$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:713172)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW713172",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-713172"
+  },
+  {
+   "body": {
+    "kind": "regex",
+    "labels": {
+     "event_type": "message 733100",
+     "product": "ASA",
+     "vendor": "Cisco"
+    },
+    "pattern": "^\\[\\s*(?P<cisco_asa_burst_object>.*?)\\s*\\] drop (?P<cisco_asa_burst_id>.*?) exceeded. Current burst rate is (?P<cisco_asa_burst_current_rate>(?:[+-]?(?:[0-9]+))) per second, max configured rate is (?P<cisco_asa_burst_configured_rate>(?:[+-]?(?:[0-9]+))); Current average rate is (?P<cisco_asa_burst_avg_rate>(?:[+-]?(?:[0-9]+))) per second, max configured rate is (?P<cisco_asa_burst_configured_avg_rate>(?:[+-]?(?:[0-9]+))); Cumulative total count is (?P<cisco_asa_burst_cumulative_count>(?:[+-]?(?:[0-9]+)))$",
+    "scope": {
+     "bucket": "^cisco>unstructured\\|(?:ASA|FTD|PIX|FWSM)-(?:733100)$"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "note": "grok CISCOFW733100",
+    "source": "https://github.com/logstash-plugins/logstash-patterns-core (patterns/ecs-v1), converted from grok to RE2"
+   },
+   "rule_id": "parser:seed-cisco-asa-733100"
+  },
+  {
+   "body": {
+    "class": "network_activity",
+    "constants": {
+     "connection_info.direction_id": 0,
+     "metadata.product.name": "ASA",
+     "metadata.product.vendor_name": "Cisco"
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "cisco_asa_outcome",
+      "note": "Built=Open, Teardown=Close, Deny=Refuse, as in ocsf/examples Cisco ASA",
+      "to": "activity_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "built": 1,
+         "created": 1,
+         "deleted": 2,
+         "denied": 5,
+         "denied by acl": 5,
+         "deny": 5,
+         "discarded": 5,
+         "dropping": 5,
+         "est-allowed": 6,
+         "permitted": 6,
+         "teardown": 2
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "cisco_asa_outcome",
+      "note": "allowed traffic = Success, blocked traffic = Failure",
+      "to": "status_id",
+      "transform": {
+       "args": {
+        "map": {
+         "built": 1,
+         "denied": 2,
+         "denied by acl": 2,
+         "deny": 2,
+         "discarded": 2,
+         "dropping": 2,
+         "est-allowed": 1,
+         "permitted": 1,
+         "teardown": 1
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "@cisco_severity",
+      "note": "Cisco severity digit is syslog severity",
+      "to": "severity_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "0": 6,
+         "1": 5,
+         "2": 5,
+         "3": 4,
+         "4": 3,
+         "5": 2,
+         "6": 1,
+         "7": 1
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "@cisco_mnemonic",
+      "note": "ASA message id",
+      "to": "metadata.event_code"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "source_ip"
+      ],
+      "note": "source address",
+      "to": "src_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "source_port"
+      ],
+      "note": "source port",
+      "to": "src_endpoint.port"
+     },
+     {
+      "confidence": "medium",
+      "from": [
+       "observer_ingress_interface_name"
+      ],
+      "note": "interface name the packet came in on",
+      "to": "src_endpoint.interface_name"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "destination_ip"
+      ],
+      "note": "destination address",
+      "to": "dst_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "destination_port"
+      ],
+      "note": "destination port",
+      "to": "dst_endpoint.port"
+     },
+     {
+      "confidence": "medium",
+      "from": [
+       "observer_egress_interface_name"
+      ],
+      "note": "interface name the packet left on",
+      "to": "dst_endpoint.interface_name"
+     },
+     {
+      "confidence": "high",
+      "from": "cisco_asa_network_transport",
+      "note": "transport protocol word",
+      "to": "connection_info.protocol_name",
+      "transform": {
+       "fn": "lower"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "cisco_asa_network_transport",
+      "note": "IANA number for the protocol word",
+      "to": "connection_info.protocol_num",
+      "transform": {
+       "args": {
+        "map": {
+         "ah": 51,
+         "esp": 50,
+         "gre": 47,
+         "icmp": 1,
+         "icmp6": 58,
+         "tcp": 6,
+         "udp": 17
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "cisco_asa_network_direction",
+      "note": "Inbound/Outbound word",
+      "to": "connection_info.direction_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "inbound": 1,
+         "outbound": 2
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "cisco_asa_connection_id",
+      "note": "ASA connection id",
+      "to": "connection_info.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "network_bytes",
+      "note": "bytes reported at teardown",
+      "to": "traffic.bytes"
+     },
+     {
+      "confidence": "medium",
+      "from": [
+       "source_user_name",
+       "user_name"
+      ],
+      "note": "user in parentheses",
+      "to": "actor.user.name"
+     },
+     {
+      "confidence": "medium",
+      "from": "event_reason",
+      "note": "teardown reason text",
+      "to": "message"
+     }
+    ],
+    "profiles": [
+     "host"
+    ]
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "needs_human_review": true,
+    "note": "Cisco ASA connection messages (106023, 302013-302016, 305011, 305012 and similar)",
+    "source": "https://github.com/ocsf/examples (mappings/markdown), re-expressed as a mapping rule for OCSF 1.10.0"
+   },
+   "rule_id": "mapping:seed-cisco-asa-network"
+  }
+ ]
+}

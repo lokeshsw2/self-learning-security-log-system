@@ -1,0 +1,23 @@
+{
+ "format": "logparser-registry/1",
+ "rules": [
+  {
+   "body": {
+    "name": "apache_error",
+    "order": 29,
+    "test": {
+     "kind": "regex",
+     "pattern": "^\\[(?P<timestamp>[A-Z][a-z]{2} [A-Z][a-z]{2} [ \\d]\\d \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)? \\d{4})\\] \\[(?P<level>[a-z:_\\w]+)\\] (?:\\[pid (?P<pid>\\d+)(?::tid \\d+)?\\] )?(?:\\[client (?P<client>[^\\]]+)\\] )?(?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "project licence",
+    "note": "Apache httpd error log header",
+    "source": "this project"
+   },
+   "rule_id": "detect:apache_error"
+  }
+ ]
+}

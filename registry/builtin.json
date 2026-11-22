@@ -1,0 +1,730 @@
+{
+ "format": "logparser-registry/1",
+ "rules": [
+  {
+   "body": {
+    "continuation": [
+     "^\\s+at [\\w.$<>]+\\(",
+     "^Caused by: ",
+     "^\\s+\\.\\.\\. \\d+ more",
+     "^\\s{2,}File \""
+    ],
+    "max_record_lines": 500,
+    "multiline_json": true,
+    "multiline_xml": true,
+    "octet_counting": true
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Java and Python stack traces, pretty-printed JSON and XML, RFC 6587 octet counting",
+    "source": "this project"
+   },
+   "rule_id": "framing:default"
+  },
+  {
+   "body": {
+    "delimiter": " ",
+    "drop_pattern": "^#[A-Za-z_]+(?:: |\\t| \\\\x)",
+    "field_sep": " ",
+    "pattern": "^#Fields: (?P<fields>.+)$"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "W3C extended log format header",
+    "source": "this project"
+   },
+   "rule_id": "directive:w3c"
+  },
+  {
+   "body": {
+    "delimiter": "\t",
+    "drop_pattern": "^#[A-Za-z_]+(?:: |\\t| \\\\x)",
+    "field_sep": "\t",
+    "pattern": "^#fields\\t(?P<fields>.+)$"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Zeek TSV header",
+    "source": "this project"
+   },
+   "rule_id": "directive:zeek-tsv"
+  },
+  {
+   "body": {
+    "format": "binary",
+    "name": "binary",
+    "order": 0,
+    "test": {
+     "kind": "binary",
+     "max_nonprintable": 0.1
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:binary"
+  },
+  {
+   "body": {
+    "format": "json",
+    "name": "json",
+    "order": 5,
+    "test": {
+     "kind": "json"
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:json"
+  },
+  {
+   "body": {
+    "format": "xml",
+    "name": "xml",
+    "order": 6,
+    "test": {
+     "kind": "xml"
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:xml"
+  },
+  {
+   "body": {
+    "app": [
+     "vendor",
+     "product"
+    ],
+    "format": "cef",
+    "header_patterns": {
+     "prefix": [
+      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
+      "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+)",
+      "^<(?P<pri>\\d{1,3})>"
+     ]
+    },
+    "name": "cef",
+    "order": 10,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?P<prefix>.*?)(?P<payload>CEF: ?\\d+\\|(?P<vendor>[^|]*)\\|(?P<product>[^|]*)\\|.*)$"
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:cef"
+  },
+  {
+   "body": {
+    "app": [
+     "vendor",
+     "product"
+    ],
+    "format": "leef",
+    "header_patterns": {
+     "prefix": [
+      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
+      "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+)",
+      "^<(?P<pri>\\d{1,3})>"
+     ]
+    },
+    "name": "leef",
+    "order": 11,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?P<prefix>.*?)(?P<payload>LEEF: ?\\d(?:\\.\\d)?\\|(?P<vendor>[^|]*)\\|(?P<product>[^|]*)\\|.*)$"
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:leef"
+  },
+  {
+   "body": {
+    "app": [
+     "cisco_facility",
+     "cisco_mnemonic"
+    ],
+    "header_patterns": {
+     "prefix": [
+      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
+      "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+)",
+      "^<(?P<pri>\\d{1,3})>"
+     ]
+    },
+    "name": "cisco",
+    "order": 15,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?P<prefix>.*?)%(?P<cisco_facility>[A-Z][A-Z0-9_]{1,20})-(?P<cisco_severity>[0-7])-(?P<cisco_mnemonic>[A-Z0-9_]{2,40}): ?(?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:cisco"
+  },
+  {
+   "body": {
+    "app": [
+     "app"
+    ],
+    "name": "syslog5424",
+    "order": 20,
+    "payload_fallback": "sd",
+    "test": {
+     "kind": "regex",
+     "pattern": "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+) (?P<app>\\S+) (?P<procid>\\S+) (?P<msgid>\\S+) (?:-|(?P<sd>(?:\\[(?:[^\\]\\\\\"]|\\\\.|\"(?:[^\"\\\\]|\\\\.)*\")*\\])+)) ?(?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:syslog5424"
+  },
+  {
+   "body": {
+    "name": "syslog5424_short",
+    "order": 21,
+    "test": {
+     "kind": "regex",
+     "pattern": "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\d{4}-\\S+) (?P<host>\\S+) (?P<payload>[{\\[].*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:syslog5424_short"
+  },
+  {
+   "body": {
+    "app": [
+     "app"
+    ],
+    "name": "syslog3164",
+    "order": 22,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*) (?P<app>[^\\s:\\[\\]]+)(?:\\[(?P<pid>\\d+)\\])?:(?: (?P<payload>.*))?$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:syslog3164"
+  },
+  {
+   "body": {
+    "app": [
+     "app"
+    ],
+    "name": "syslog_iso",
+    "order": 23,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?) (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*) (?P<app>[^\\s:\\[\\]]+)(?:\\[(?P<pid>\\d+)\\])?:(?: (?P<payload>.*))?$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:syslog_iso"
+  },
+  {
+   "body": {
+    "name": "syslog3164_notag",
+    "order": 24,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*) (?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:syslog3164_notag"
+  },
+  {
+   "body": {
+    "name": "syslog_ts_only",
+    "order": 25,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:syslog_ts_only"
+  },
+  {
+   "body": {
+    "name": "pri_only",
+    "order": 26,
+    "test": {
+     "kind": "regex",
+     "pattern": "^<(?P<pri>\\d{1,3})>(?P<payload>[^\\d].*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:pri_only"
+  },
+  {
+   "body": {
+    "name": "ts_level",
+    "order": 30,
+    "test": {
+     "kind": "regex",
+     "pattern": "^\\[?(?P<timestamp>\\d{4}-\\d\\d-\\d\\d[ T]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)\\]?,? +(?:- )?\\[?(?P<level>TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|ERR|FATAL|CRITICAL|Info|Warning|Error|Debug)\\]? +(?:- )?(?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:ts_level"
+  },
+  {
+   "body": {
+    "app": [
+     "app"
+    ],
+    "name": "bracket_ts",
+    "order": 31,
+    "test": {
+     "kind": "regex",
+     "pattern": "^\\[(?P<timestamp>\\d{4}-\\d\\d-\\d\\d[T ][^\\]]+)\\] (?:(?P<level>[A-Z]) )?(?:(?P<app>[\\w.\\-]+): )?(?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:bracket_ts"
+  },
+  {
+   "body": {
+    "format": "kv",
+    "name": "kv_checkpoint",
+    "order": 47,
+    "test": {
+     "dialect": "kv_colon",
+     "kind": "kv",
+     "min_coverage": 0.6,
+     "min_pairs": 4
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:kv_checkpoint"
+  },
+  {
+   "body": {
+    "format": "kv",
+    "name": "kv_pipe",
+    "order": 48,
+    "test": {
+     "dialect": "kv_pipe",
+     "kind": "kv",
+     "min_coverage": 0.6,
+     "min_pairs": 4
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:kv_pipe"
+  },
+  {
+   "body": {
+    "format": "kv",
+    "name": "kv",
+    "order": 50,
+    "test": {
+     "dialect": "kv_eq",
+     "kind": "kv",
+     "min_coverage": 0.55,
+     "min_pairs": 4
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:kv"
+  },
+  {
+   "body": {
+    "format": "delimited",
+    "name": "csv",
+    "order": 60,
+    "test": {
+     "delimiter": ",",
+     "kind": "delimited",
+     "min_fields": 8
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:csv"
+  },
+  {
+   "body": {
+    "format": "delimited",
+    "name": "tsv",
+    "order": 61,
+    "test": {
+     "delimiter": "\t",
+     "kind": "delimited",
+     "min_fields": 5
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:tsv"
+  },
+  {
+   "body": {
+    "format": "delimited",
+    "name": "psv",
+    "order": 62,
+    "test": {
+     "delimiter": "|",
+     "kind": "delimited",
+     "min_fields": 6
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:psv"
+  },
+  {
+   "body": {
+    "mode": "pair",
+    "pair_pattern": "(?:^|[\\s,;|(\\[{])(?P<k>[A-Za-z_][\\w.\\-]*)=(?:\"(?P<q>(?:[^\"\\\\]|\\\\.)*)\"|'(?P<s>[^']*)'|(?P<v>[^\\s\"']*))"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "key=value, key=\"quoted value\", key='quoted value'",
+    "source": "this project"
+   },
+   "rule_id": "dialect:kv_eq"
+  },
+  {
+   "body": {
+    "mode": "pair",
+    "pair_pattern": "(?P<k>[A-Za-z_][\\w.\\-]*)::?\"(?P<q>(?:[^\"\\\\]|\\\\.)*)\""
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "key:\"value\"; pairs",
+    "source": "this project"
+   },
+   "rule_id": "dialect:kv_colon"
+  },
+  {
+   "body": {
+    "key_pattern": "(?:^|\\|)(?P<k>[A-Za-z_]\\w*)=",
+    "mode": "span",
+    "strip": " |"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "key=value|key=value",
+    "source": "this project"
+   },
+   "rule_id": "dialect:kv_pipe"
+  },
+  {
+   "body": {
+    "key_pattern": "(?:^|, )(?P<k>[A-Z][A-Za-z0-9_]*(?: [A-Za-z0-9_]+){0,4}): ",
+    "mode": "span",
+    "strip": " ,"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Label: value, Label: value (labels may contain spaces)",
+    "source": "this project"
+   },
+   "rule_id": "dialect:kv_label"
+  },
+  {
+   "body": {
+    "key_pattern": "(?:^|\\s)(?P<k>[A-Za-z_][\\w.\\-]*)=",
+    "mode": "span",
+    "strip": " \t"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "key=value where values may contain spaces and run to the next key",
+    "source": "this project"
+   },
+   "rule_id": "dialect:kv_span"
+  },
+  {
+   "body": {
+    "mode": "extend",
+    "patterns": [
+     {
+      "name": "dquoted",
+      "pattern": "\"[^\"]{0,400}\"",
+      "placeholder": "<STR>"
+     },
+     {
+      "group": 1,
+      "name": "squoted",
+      "pattern": "(?:^|[^A-Za-z0-9])('[^']{0,200}')",
+      "placeholder": "<STR>"
+     },
+     {
+      "name": "iso_ts",
+      "pattern": "\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?",
+      "placeholder": "<TS>"
+     },
+     {
+      "name": "syslog_ts",
+      "pattern": "(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),? )?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?(?: \\d{4}\\b)?",
+      "placeholder": "<TS>"
+     },
+     {
+      "name": "clf_ts",
+      "pattern": "\\d\\d/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/\\d{4}:\\d\\d:\\d\\d:\\d\\d(?: [+-]\\d{4})?",
+      "placeholder": "<TS>"
+     },
+     {
+      "name": "date",
+      "pattern": "\\b(?:\\d{4}[-/]\\d\\d?[-/]\\d\\d?|\\d\\d?/\\d\\d?/\\d{2,4})\\b",
+      "placeholder": "<DATE>"
+     },
+     {
+      "name": "time",
+      "pattern": "\\b\\d{1,2}:\\d{1,2}:\\d{1,2}(?:[.,:]\\d+)?\\b",
+      "placeholder": "<TIME>"
+     },
+     {
+      "name": "uuid",
+      "pattern": "\\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\b",
+      "placeholder": "<UUID>"
+     },
+     {
+      "name": "mac",
+      "pattern": "\\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\\b",
+      "placeholder": "<MAC>"
+     },
+     {
+      "name": "ipv6",
+      "pattern": "\\b(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,6}:(?:[0-9A-Fa-f]{1,4}\\b)?|::(?:[0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4}\\b",
+      "placeholder": "<IP>"
+     },
+     {
+      "name": "ipv4",
+      "pattern": "\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b",
+      "placeholder": "<IP>"
+     },
+     {
+      "name": "url",
+      "pattern": "\\b[a-z][a-z0-9+.\\-]*://[^\\s\"'<>\\])]+",
+      "placeholder": "<URL>"
+     },
+     {
+      "name": "email",
+      "pattern": "\\b[\\w.+\\-]+@[\\w\\-]+(?:\\.[\\w\\-]+)+\\b",
+      "placeholder": "<EMAIL>"
+     },
+     {
+      "name": "path",
+      "pattern": "(?:\\b[A-Za-z]:)?(?:[/\\\\][\\w.\\-$@+~%]+){2,}[/\\\\]?",
+      "placeholder": "<PATH>"
+     },
+     {
+      "name": "hex0x",
+      "pattern": "\\b0[xX][0-9A-Fa-f]+\\b",
+      "placeholder": "<HEX>"
+     },
+     {
+      "name": "id",
+      "pattern": "\\b[A-Za-z]+(?:[_\\-][A-Za-z]+)*[_\\-]-?\\d[\\w\\-]*\\b",
+      "placeholder": "<ID>"
+     },
+     {
+      "name": "num",
+      "pattern": "-?\\b\\d+(?:\\.\\d+)?\\b",
+      "placeholder": "<NUM>"
+     },
+     {
+      "name": "hex",
+      "pattern": "\\b[0-9A-Fa-f]{8,}\\b",
+      "placeholder": "<HEX>"
+     }
+    ],
+    "priority": 0,
+    "scope": {
+     "bucket": "*"
+    }
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Variables the spec names: timestamps, IPs, numbers, hex, UUIDs, quoted strings; plus MAC, URL, email, paths",
+    "source": "this project"
+   },
+   "rule_id": "mask:default"
+  },
+  {
+   "body": {
+    "depth": 1,
+    "discriminators": [
+     "type",
+     "subtype",
+     "event_type",
+     "eventType",
+     "eventName",
+     "EventID",
+     "event_simpleName",
+     "log_type",
+     "log_subtype",
+     "Operation",
+     "@msgid"
+    ],
+    "keys": "auto",
+    "priority": 0,
+    "scope": {
+     "bucket": "*"
+    },
+    "text": true
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Structured records: top-level key set plus common event-type keys",
+    "source": "this project"
+   },
+   "rule_id": "sign:default"
+  },
+  {
+   "body": {
+    "class": "base_event",
+    "fields": [
+     {
+      "confidence": "medium",
+      "from": [
+       "message",
+       "msg",
+       "summary",
+       "_text",
+       "cef.name"
+      ],
+      "note": "first free-text field found",
+      "to": "message"
+     },
+     {
+      "confidence": "high",
+      "from": "@pri",
+      "note": "syslog PRI severity bits",
+      "to": "severity_id",
+      "transform": {
+       "args": {
+        "from_pri": true
+       },
+       "fn": "syslog_severity"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "@timestamp",
+      "note": "envelope timestamp",
+      "to": "metadata.original_time"
+     }
+    ],
+    "unmapped": "rest"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Fallback for groups with a parser but no class mapping yet: OCSF Base Event, all fields in unmapped",
+    "source": "this project"
+   },
+   "rule_id": "mapping:default-base"
+  }
+ ]
+}

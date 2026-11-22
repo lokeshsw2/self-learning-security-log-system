@@ -1,0 +1,643 @@
+{
+ "format": "logparser-registry/1",
+ "rules": [
+  {
+   "body": {
+    "delimiter": " ",
+    "field_sep": " ",
+    "pattern": "^(?P<fields>version (?:[a-z\\-]+ ){3,}[a-z\\-]+)$"
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "project licence",
+    "note": "VPC flow log files start with a header line naming the fields",
+    "source": "this project"
+   },
+   "rule_id": "directive:aws-vpcflow-header"
+  },
+  {
+   "body": {
+    "class": "network_activity",
+    "constants": {
+     "cloud.provider": "AWS",
+     "connection_info.direction_id": 0,
+     "metadata.product.name": "Amazon VPC",
+     "metadata.product.vendor_name": "AWS",
+     "severity_id": 1
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "start",
+      "note": "flow start, epoch seconds",
+      "to": "time",
+      "transform": {
+       "args": {
+        "unit": "s"
+       },
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "start",
+      "note": "flow start",
+      "to": "start_time",
+      "transform": {
+       "args": {
+        "unit": "s"
+       },
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "end",
+      "note": "flow end",
+      "to": "end_time",
+      "transform": {
+       "args": {
+        "unit": "s"
+       },
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "action",
+      "note": "ACCEPT=Traffic, REJECT=Refuse",
+      "to": "activity_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "accept": 6,
+         "reject": 5
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "action",
+      "note": "accepted = Success, rejected = Failure",
+      "to": "status_id",
+      "transform": {
+       "args": {
+        "map": {
+         "accept": 1,
+         "reject": 2
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "srcaddr",
+      "note": "source address",
+      "to": "src_endpoint.ip",
+      "transform": {
+       "args": {
+        "values": [
+         "-"
+        ]
+       },
+       "fn": "null_if"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "dstaddr",
+      "note": "destination address",
+      "to": "dst_endpoint.ip",
+      "transform": {
+       "args": {
+        "values": [
+         "-"
+        ]
+       },
+       "fn": "null_if"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "srcport",
+      "note": "source port",
+      "to": "src_endpoint.port",
+      "transform": {
+       "args": {
+        "values": [
+         "-"
+        ]
+       },
+       "fn": "null_if"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "dstport",
+      "note": "destination port",
+      "to": "dst_endpoint.port",
+      "transform": {
+       "args": {
+        "values": [
+         "-"
+        ]
+       },
+       "fn": "null_if"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "interface-id",
+      "note": "ENI the flow was recorded on",
+      "to": "src_endpoint.interface_uid"
+     },
+     {
+      "confidence": "high",
+      "from": "protocol",
+      "note": "IANA protocol number",
+      "to": "connection_info.protocol_num",
+      "transform": {
+       "args": {
+        "values": [
+         "-"
+        ]
+       },
+       "fn": "null_if"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "packets",
+      "note": "packet count",
+      "to": "traffic.packets",
+      "transform": {
+       "args": {
+        "values": [
+         "-"
+        ]
+       },
+       "fn": "null_if"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "bytes",
+      "note": "byte count",
+      "to": "traffic.bytes",
+      "transform": {
+       "args": {
+        "values": [
+         "-"
+        ]
+       },
+       "fn": "null_if"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "account-id",
+      "note": "AWS account id",
+      "to": "cloud.account.uid"
+     },
+     {
+      "confidence": "medium",
+      "from": "log-status",
+      "note": "OK / NODATA / SKIPDATA",
+      "to": "status_code"
+     }
+    ],
+    "labels": {
+     "event_type": "flow record",
+     "product": "VPC Flow Logs",
+     "vendor": "AWS"
+    },
+    "match": {
+     "requires": [
+      "srcaddr",
+      "dstaddr",
+      "action",
+      "log-status"
+     ]
+    },
+    "profiles": [
+     "cloud"
+    ],
+    "scope": {
+     "bucket": "^directive>delimited\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "needs_human_review": true,
+    "note": "AWS VPC Flow Logs, default and custom formats with a header line",
+    "source": "https://github.com/ocsf/examples (mappings/markdown), re-expressed as a mapping rule for OCSF 1.10.0"
+   },
+   "rule_id": "mapping:seed-aws-vpcflow"
+  },
+  {
+   "body": {
+    "class": "authentication",
+    "constants": {
+     "activity_id": 1,
+     "cloud.provider": "AWS",
+     "is_remote": true,
+     "metadata.product.name": "CloudTrail",
+     "metadata.product.vendor_name": "AWS",
+     "severity_id": 1
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "eventTime",
+      "note": "event time (ISO 8601 UTC)",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "eventName",
+      "note": "API action",
+      "to": "api.operation"
+     },
+     {
+      "confidence": "high",
+      "from": "eventSource",
+      "note": "AWS service endpoint",
+      "to": "api.service.name"
+     },
+     {
+      "confidence": "medium",
+      "from": "apiVersion",
+      "note": "API version when present",
+      "to": "api.version"
+     },
+     {
+      "confidence": "high",
+      "from": "sourceIPAddress",
+      "note": "caller address when it is an IP",
+      "to": "src_endpoint.ip",
+      "when": {
+       "field": "sourceIPAddress",
+       "matches": "^(?:\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+)$"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "sourceIPAddress",
+      "note": "AWS service DNS name when the caller is a service",
+      "to": "src_endpoint.domain",
+      "when": {
+       "field": "sourceIPAddress",
+       "matches": "[G-Zg-z]"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "userAgent",
+      "note": "user agent",
+      "to": "http_request.user_agent"
+     },
+     {
+      "confidence": "high",
+      "from": "awsRegion",
+      "note": "region",
+      "to": "cloud.region"
+     },
+     {
+      "confidence": "high",
+      "from": "recipientAccountId",
+      "note": "account that received the event",
+      "to": "cloud.account.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "eventID",
+      "note": "CloudTrail event id",
+      "to": "metadata.uid"
+     },
+     {
+      "confidence": "medium",
+      "from": "eventType",
+      "note": "CloudTrail event type",
+      "to": "metadata.event_code"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "userIdentity.arn",
+       "userIdentity.principalId"
+      ],
+      "note": "identity that signed in",
+      "to": "user.uid"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "userIdentity.userName"
+      ],
+      "note": "IAM user name",
+      "to": "user.name"
+     },
+     {
+      "confidence": "high",
+      "from": "userIdentity.accountId",
+      "note": "account",
+      "to": "user.account.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "eventSource",
+      "note": "sign-in service",
+      "to": "service.name"
+     },
+     {
+      "confidence": "high",
+      "from": "additionalEventData.MFAUsed",
+      "note": "MFAUsed Yes/No",
+      "to": "is_mfa",
+      "transform": {
+       "args": {
+        "map": {
+         "no": false,
+         "yes": true
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "responseElements.ConsoleLogin",
+      "note": "ConsoleLogin Success/Failure",
+      "to": "status_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "failure": 2,
+         "success": 1
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "errorMessage",
+      "note": "failure reason",
+      "to": "status_detail"
+     }
+    ],
+    "labels": {
+     "event_type": "ConsoleLogin",
+     "product": "CloudTrail",
+     "vendor": "AWS"
+    },
+    "match": {
+     "equals": {
+      "eventName": "ConsoleLogin"
+     },
+     "requires": [
+      "eventSource",
+      "awsRegion",
+      "eventVersion"
+     ]
+    },
+    "profiles": [
+     "cloud"
+    ],
+    "scope": {
+     "bucket": "json\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "needs_human_review": true,
+    "note": "AWS console sign-in to Authentication",
+    "source": "https://github.com/ocsf/examples (mappings/markdown), re-expressed as a mapping rule for OCSF 1.10.0"
+   },
+   "rule_id": "mapping:seed-aws-cloudtrail-1-consolelogin"
+  },
+  {
+   "body": {
+    "class": "api_activity",
+    "constants": {
+     "cloud.provider": "AWS",
+     "metadata.product.name": "CloudTrail",
+     "metadata.product.vendor_name": "AWS",
+     "severity_id": 1
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "eventTime",
+      "note": "event time (ISO 8601 UTC)",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "eventName",
+      "note": "API action",
+      "to": "api.operation"
+     },
+     {
+      "confidence": "high",
+      "from": "eventSource",
+      "note": "AWS service endpoint",
+      "to": "api.service.name"
+     },
+     {
+      "confidence": "medium",
+      "from": "apiVersion",
+      "note": "API version when present",
+      "to": "api.version"
+     },
+     {
+      "confidence": "high",
+      "from": "requestID",
+      "note": "request id",
+      "to": "api.request.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "errorCode",
+      "note": "error code when the call failed",
+      "to": "api.response.error"
+     },
+     {
+      "confidence": "high",
+      "from": "errorMessage",
+      "note": "error message when the call failed",
+      "to": "api.response.message"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "userIdentity.arn",
+       "userIdentity.principalId",
+       "userIdentity.accountId"
+      ],
+      "note": "caller identity",
+      "to": "actor.user.uid"
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "userIdentity.userName",
+       "userIdentity.sessionContext.sessionIssuer.userName"
+      ],
+      "note": "caller user name",
+      "to": "actor.user.name"
+     },
+     {
+      "confidence": "medium",
+      "from": "userIdentity.type",
+      "note": "identity type",
+      "to": "actor.user.type"
+     },
+     {
+      "confidence": "high",
+      "from": "userIdentity.accountId",
+      "note": "account of the caller",
+      "to": "actor.user.account.uid"
+     },
+     {
+      "confidence": "medium",
+      "from": "userIdentity.invokedBy",
+      "note": "AWS service that made the call",
+      "to": "actor.invoked_by"
+     },
+     {
+      "confidence": "high",
+      "from": "sourceIPAddress",
+      "note": "caller address when it is an IP",
+      "to": "src_endpoint.ip",
+      "when": {
+       "field": "sourceIPAddress",
+       "matches": "^(?:\\d{1,3}(?:\\.\\d{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:.]+)$"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "sourceIPAddress",
+      "note": "AWS service DNS name when the caller is a service",
+      "to": "src_endpoint.domain",
+      "when": {
+       "field": "sourceIPAddress",
+       "matches": "[G-Zg-z]"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "userAgent",
+      "note": "user agent",
+      "to": "http_request.user_agent"
+     },
+     {
+      "confidence": "high",
+      "from": "awsRegion",
+      "note": "region",
+      "to": "cloud.region"
+     },
+     {
+      "confidence": "high",
+      "from": "recipientAccountId",
+      "note": "account that received the event",
+      "to": "cloud.account.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "eventID",
+      "note": "CloudTrail event id",
+      "to": "metadata.uid"
+     },
+     {
+      "confidence": "medium",
+      "from": "eventType",
+      "note": "CloudTrail event type",
+      "to": "metadata.event_code"
+     },
+     {
+      "confidence": "medium",
+      "note": "an errorCode means the call failed",
+      "to": "status_id",
+      "value": 2,
+      "when": {
+       "exists": true,
+       "field": "errorCode"
+      }
+     },
+     {
+      "confidence": "medium",
+      "note": "no errorCode means the call succeeded",
+      "to": "status_id",
+      "value": 1,
+      "when": {
+       "exists": false,
+       "field": "errorCode"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "eventName",
+      "note": "verb prefix of the API action",
+      "to": "activity_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {},
+        "patterns": {
+         "^(?:Create|Add|Put|Run|Start|Enable|Attach|Upload|Associate|Register)": 1,
+         "^(?:Delete|Remove|Stop|Terminate|Deactivate|Disable|Detach|Disassociate|Deregister)": 4,
+         "^(?:Get|Describe|Head|Lookup|Check)": 2,
+         "^(?:Update|Modify|Set|Change|Assume)": 3,
+         "^List": 5
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     }
+    ],
+    "labels": {
+     "event_type": "API call",
+     "product": "CloudTrail",
+     "vendor": "AWS"
+    },
+    "match": {
+     "requires": [
+      "eventSource",
+      "eventName",
+      "awsRegion",
+      "eventVersion",
+      "userIdentity.type"
+     ]
+    },
+    "profiles": [
+     "cloud"
+    ],
+    "scope": {
+     "bucket": "json\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "needs_human_review": true,
+    "note": "AWS CloudTrail management and data events to API Activity",
+    "source": "https://github.com/ocsf/examples (mappings/markdown), re-expressed as a mapping rule for OCSF 1.10.0"
+   },
+   "rule_id": "mapping:seed-aws-cloudtrail-9-api"
+  }
+ ]
+}

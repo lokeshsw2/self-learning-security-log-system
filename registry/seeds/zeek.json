@@ -1,0 +1,433 @@
+{
+ "format": "logparser-registry/1",
+ "rules": [
+  {
+   "body": {
+    "class": "dns_activity",
+    "constants": {
+     "activity_id": 6,
+     "connection_info.direction_id": 0,
+     "metadata.log_name": "dns",
+     "metadata.product.name": "Zeek",
+     "metadata.product.vendor_name": "Zeek",
+     "severity_id": 1
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "ts",
+      "note": "Zeek ts (epoch seconds or ISO)",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "id.orig_h",
+      "note": "originator address",
+      "to": "src_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": "id.orig_p",
+      "note": "originator port",
+      "to": "src_endpoint.port"
+     },
+     {
+      "confidence": "high",
+      "from": "id.resp_h",
+      "note": "responder address",
+      "to": "dst_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": "id.resp_p",
+      "note": "responder port",
+      "to": "dst_endpoint.port"
+     },
+     {
+      "confidence": "high",
+      "from": "uid",
+      "note": "Zeek connection uid",
+      "to": "connection_info.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "query",
+      "note": "queried name",
+      "to": "query.hostname"
+     },
+     {
+      "confidence": "high",
+      "from": "qtype_name",
+      "note": "query type name",
+      "to": "query.type"
+     },
+     {
+      "confidence": "high",
+      "from": "qclass_name",
+      "note": "query class name",
+      "to": "query.class"
+     },
+     {
+      "confidence": "high",
+      "from": "rcode_name",
+      "note": "response code name",
+      "to": "rcode"
+     },
+     {
+      "confidence": "high",
+      "from": "rcode",
+      "note": "numeric response code",
+      "to": "rcode_id"
+     },
+     {
+      "confidence": "high",
+      "from": "proto",
+      "note": "transport",
+      "to": "connection_info.protocol_name"
+     },
+     {
+      "confidence": "medium",
+      "from": "trans_id",
+      "note": "DNS transaction id",
+      "to": "transaction_id"
+     }
+    ],
+    "labels": {
+     "event_type": "dns.log",
+     "product": "Zeek",
+     "vendor": "Zeek"
+    },
+    "match": {
+     "requires": [
+      "id.orig_h",
+      "query",
+      "qtype_name"
+     ]
+    },
+    "scope": {
+     "bucket": "json\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "needs_human_review": true,
+    "note": "Zeek dns.log",
+    "source": "https://github.com/ocsf/examples (mappings/markdown), re-expressed as a mapping rule for OCSF 1.10.0"
+   },
+   "rule_id": "mapping:seed-zeek-1-dns"
+  },
+  {
+   "body": {
+    "class": "http_activity",
+    "constants": {
+     "connection_info.direction_id": 0,
+     "metadata.log_name": "http",
+     "metadata.product.name": "Zeek",
+     "metadata.product.vendor_name": "Zeek",
+     "severity_id": 1
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "ts",
+      "note": "Zeek ts (epoch seconds or ISO)",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "id.orig_h",
+      "note": "originator address",
+      "to": "src_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": "id.orig_p",
+      "note": "originator port",
+      "to": "src_endpoint.port"
+     },
+     {
+      "confidence": "high",
+      "from": "id.resp_h",
+      "note": "responder address",
+      "to": "dst_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": "id.resp_p",
+      "note": "responder port",
+      "to": "dst_endpoint.port"
+     },
+     {
+      "confidence": "high",
+      "from": "uid",
+      "note": "Zeek connection uid",
+      "to": "connection_info.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "method",
+      "note": "HTTP method to activity",
+      "to": "activity_id",
+      "transform": {
+       "args": {
+        "default": 0,
+        "map": {
+         "connect": 1,
+         "delete": 2,
+         "get": 3,
+         "head": 4,
+         "options": 5,
+         "patch": 9,
+         "post": 6,
+         "put": 7,
+         "trace": 8
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "method",
+      "note": "request method",
+      "to": "http_request.http_method"
+     },
+     {
+      "confidence": "high",
+      "from": "uri",
+      "note": "request URI",
+      "to": "http_request.url.path"
+     },
+     {
+      "confidence": "medium",
+      "from": "host",
+      "note": "Host header",
+      "to": "http_request.url.hostname"
+     },
+     {
+      "confidence": "high",
+      "from": "user_agent",
+      "note": "User-Agent header",
+      "to": "http_request.user_agent"
+     },
+     {
+      "confidence": "high",
+      "from": "referrer",
+      "note": "Referer header",
+      "to": "http_request.referrer"
+     },
+     {
+      "confidence": "high",
+      "from": "version",
+      "note": "HTTP version",
+      "to": "http_request.version"
+     },
+     {
+      "confidence": "high",
+      "from": "status_code",
+      "note": "status code",
+      "to": "http_response.code"
+     },
+     {
+      "confidence": "high",
+      "from": "status_msg",
+      "note": "status message",
+      "to": "http_response.message"
+     },
+     {
+      "confidence": "medium",
+      "from": "response_body_len",
+      "note": "response body length",
+      "to": "http_response.length"
+     }
+    ],
+    "labels": {
+     "event_type": "http.log",
+     "product": "Zeek",
+     "vendor": "Zeek"
+    },
+    "match": {
+     "absent": [
+      "call_id"
+     ],
+     "requires": [
+      "id.orig_h",
+      "method",
+      "uri",
+      "trans_depth"
+     ]
+    },
+    "scope": {
+     "bucket": "json\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "needs_human_review": true,
+    "note": "Zeek http.log",
+    "source": "https://github.com/ocsf/examples (mappings/markdown), re-expressed as a mapping rule for OCSF 1.10.0"
+   },
+   "rule_id": "mapping:seed-zeek-2-http"
+  },
+  {
+   "body": {
+    "class": "network_activity",
+    "constants": {
+     "activity_id": 6,
+     "connection_info.direction_id": 0,
+     "metadata.log_name": "conn",
+     "metadata.product.name": "Zeek",
+     "metadata.product.vendor_name": "Zeek",
+     "severity_id": 1
+    },
+    "fields": [
+     {
+      "confidence": "high",
+      "from": "ts",
+      "note": "Zeek ts (epoch seconds or ISO)",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "id.orig_h",
+      "note": "originator address",
+      "to": "src_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": "id.orig_p",
+      "note": "originator port",
+      "to": "src_endpoint.port"
+     },
+     {
+      "confidence": "high",
+      "from": "id.resp_h",
+      "note": "responder address",
+      "to": "dst_endpoint.ip"
+     },
+     {
+      "confidence": "high",
+      "from": "id.resp_p",
+      "note": "responder port",
+      "to": "dst_endpoint.port"
+     },
+     {
+      "confidence": "high",
+      "from": "uid",
+      "note": "Zeek connection uid",
+      "to": "connection_info.uid"
+     },
+     {
+      "confidence": "high",
+      "from": "proto",
+      "note": "transport",
+      "to": "connection_info.protocol_name"
+     },
+     {
+      "confidence": "high",
+      "from": "proto",
+      "note": "IANA number for the transport",
+      "to": "connection_info.protocol_num",
+      "transform": {
+       "args": {
+        "map": {
+         "ah": 51,
+         "esp": 50,
+         "gre": 47,
+         "icmp": 1,
+         "icmp6": 58,
+         "tcp": 6,
+         "udp": 17
+        }
+       },
+       "fn": "enum_lookup"
+      }
+     },
+     {
+      "confidence": "medium",
+      "from": "history",
+      "note": "Zeek connection history string",
+      "to": "connection_info.flag_history"
+     },
+     {
+      "confidence": "medium",
+      "from": "service",
+      "note": "application protocol Zeek identified",
+      "to": "app_protocol_name"
+     },
+     {
+      "confidence": "high",
+      "from": "duration",
+      "note": "seconds to milliseconds",
+      "to": "duration",
+      "transform": {
+       "args": {
+        "factor": 1000
+       },
+       "fn": "scale"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": "orig_bytes",
+      "note": "payload bytes from originator",
+      "to": "traffic.bytes_out"
+     },
+     {
+      "confidence": "high",
+      "from": "resp_bytes",
+      "note": "payload bytes from responder",
+      "to": "traffic.bytes_in"
+     },
+     {
+      "confidence": "high",
+      "from": "orig_pkts",
+      "note": "packets from originator",
+      "to": "traffic.packets_out"
+     },
+     {
+      "confidence": "high",
+      "from": "resp_pkts",
+      "note": "packets from responder",
+      "to": "traffic.packets_in"
+     }
+    ],
+    "labels": {
+     "event_type": "conn.log",
+     "product": "Zeek",
+     "vendor": "Zeek"
+    },
+    "match": {
+     "requires": [
+      "id.orig_h",
+      "id.resp_h",
+      "conn_state",
+      "proto"
+     ]
+    },
+    "scope": {
+     "bucket": "json\\|"
+    }
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "Apache-2.0",
+    "needs_human_review": true,
+    "note": "Zeek conn.log",
+    "source": "https://github.com/ocsf/examples (mappings/markdown), re-expressed as a mapping rule for OCSF 1.10.0"
+   },
+   "rule_id": "mapping:seed-zeek-3-conn"
+  }
+ ]
+}

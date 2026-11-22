@@ -1,0 +1,6 @@
+#!/bin/sh
+# Agent tool wrapper:  bin/lp-tool AGENT_NAME TOOL [args]
+# The database is work/run.db unless LP_DB is set.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+AGENT="$1"; shift
+cd "$ROOT" && exec .venv/bin/python -m logparser.tools --db "${LP_DB:-work/run.db}" --agent "$AGENT" "$@"
