@@ -1002,15 +1002,16 @@
      {
       "confidence": "medium",
       "from": "outcome",
-      "note": "outcome word the long-tail agent copied from the line: failure words -> Failure, success words -> Success, anything else -> Other",
+      "note": "outcome word the long-tail agent copied from the line: explicit failure words -> Failure, explicit success words -> Success, negated or anything else -> Other",
       "to": "status_id",
       "transform": {
        "args": {
         "case_insensitive": true,
         "default": 99,
         "patterns": {
-         "(?i)(\\b(not|no|never)\\s+\\w+|\\b(denied|deny|blocked|block|dropped|drop|rejected|reject|refused|failed|fail|failure|invalid|unauthorized|forbidden|locked|expired|timeout|error)\\b)": 2,
-         "(?i)\\b(allowed|allow|accepted|accept|permitted|permit|granted|success|succeeded|successful|authorized|authenticated|passed|ok)\\b": 1
+         "(?i)(\\b(not|no|never)\\b)": 99,
+         "(?i)\\b(allowed|allow|accepted|accept|permitted|permit|granted|success|succeeded|successful|authorized|authenticated|passed)\\b": 1,
+         "(?i)\\b(denied|deny|blocked|block|dropped|drop|rejected|reject|refused|failed|fail|failure|unauthorized|forbidden)\\b": 2
         }
        },
        "fn": "enum_lookup"

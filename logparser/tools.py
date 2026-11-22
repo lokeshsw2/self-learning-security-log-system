@@ -999,6 +999,7 @@ class Tools:
         registry.validate_rule("longtail", body)
         v = registry.save_rule(self.store, rid, body, {"created_by": self.agent, "tag": "ai_extracted",
                                                        "note": "summary slots rebuilt by code"})
+        self.e.reload()
         self._log("retemplate_longtail", sig, True, "summary kept" if "summary" in body else "summary dropped")
         return {"rule": rid, "changed": True, "version": v, "summary": "summary" in body}
 

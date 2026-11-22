@@ -374,7 +374,8 @@ class App:
         with self.lock:
             res = audit.run(self.eng, None, route_failures=True, max_rounds=self.eng.settings.audit_max_rounds)
         self.last_audit = {**{k: res[k] for k in ("groups_checked", "groups_failing", "lines_checked", "by_check",
-                                                  "routed")}, "at": time.time(), "failing": res["failing"][:50]}
+                                                  "routed", "fixed_by_code")},
+                           "at": time.time(), "failing": res["failing"][:50]}
         return self.last_audit
 
     def learn_stop(self) -> dict:

@@ -27,7 +27,7 @@ def test_leak_from_one_sample_is_found_and_routed_with_feedback(tmp_path):
     rep = audit.audit_group(eng, sig)
     assert rep["owner"] == "longtail" and rep["problems"]["leak"]["count"] == 2      # PG2 and PG3, not PG
     assert "10.20.9.56" in rep["problems"]["leak"]["examples"][0]["problem"]
-    res = audit.run(eng, [sig])
+    res = audit.run(eng, [sig], repair=False)
     assert res["routed"] == {"longtail": 1}
     item = eng.store.queue_items("longtail")[0]
     assert item["key"] == sig and item["payload"]["reported_by"] == "audit" and item["payload"]["audit_round"] == 1
@@ -65,11 +65,66 @@ def test_rule_not_applied_to_its_own_group_goes_to_a_human(tmp_path):
     assert hr[0]["key"] == "audit:" + sig and "code problem" in hr[0]["payload"]["question"]
 
 
-def test_repeated_failure_goes_to_a_human_after_max_rounds(tmp_path):
+def test_rounds_count_agent_attempts_not_audits(tmp_path):
     eng, sig = longtail_group(tmp_path)
     save_direct(eng, "longtail:" + sig, {"fields": {}, "summary": "Connection received from host 10.20.9.56."})
     rep = audit.audit_group(eng, sig)
-    assert [audit.route(eng, rep, max_rounds=2) for _ in range(3)] == ["longtail", "longtail", "human-review"]
+    # auditing again and again while the item still waits uses no round
+    assert [audit.route(eng, rep, max_rounds=2) for _ in range(5)] == ["longtail"] * 5
+    assert eng.store.get_state("audit_rounds:" + sig) == 1
+    went = []
+    for _ in range(2):                       # the agent works the item twice and fails twice
+        eng.store.queue_done("longtail", sig)
+        went.append(audit.route(eng, rep, max_rounds=2))
+    assert went == ["longtail", "human-review"]
+    assert eng.store.queue_items("longtail") == []          # the agent's copy is closed: nobody pays for it again
+    # a human resolves it; later audits never reopen it
+    eng.store.queue_done("human-review", "audit:" + sig)
+    assert audit.route(eng, rep, max_rounds=2) == "human-review"
+    assert eng.store.queue_items("human-review") == []
+
+
+def test_round_count_survives_other_writers_of_the_queue(tmp_path):
+    eng, sig = longtail_group(tmp_path)
+    save_direct(eng, "longtail:" + sig, {"fields": {}, "summary": "Connection received from host 10.20.9.56."})
+    rep = audit.audit_group(eng, sig)
+    audit.route(eng, rep)
+    eng.store.reopen("longtail", sig, {"signature": sig})      # e.g. the engine re-queues it without audit info
+    eng.store.queue_done("longtail", sig)
+    audit.route(eng, rep)
+    assert eng.store.get_state("audit_rounds:" + sig) == 2
+
+
+def test_code_repairs_what_it_can_before_any_model(tmp_path):
+    eng, sig = longtail_group(tmp_path)
+    save_direct(eng, "longtail:" + sig, {"fields": {}, "summary": "Connection received from host 10.20.9.56."})
+    res = audit.run(eng, [sig])
+    assert res["fixed_by_code"] == 1 and res["groups_failing"] == 0 and res["routed"] == {}
+    assert [i for i in eng.store.queue_items("longtail") if i["payload"].get("reported_by") == "audit"] == []
+    msgs = sorted(json.loads(r["ocsf"])["message"] for r in eng.store.q("SELECT ocsf FROM events"))
+    assert msgs[0] == "Connection received from host 10.20.1.24."
+
+
+def test_fix_round_uses_only_the_agents_the_caller_chose(tmp_path, monkeypatch):
+    eng, sig = longtail_group(tmp_path)
+    calls = iter([{"failing": [{"signature": sig, "sent_to": "needs-mapping"}], "groups_checked": 1,
+                   "groups_failing": 1, "lines_checked": 3, "by_check": {"value": 3}, "routed": {"needs-mapping": 1},
+                   "fixed_by_code": 0}])
+    monkeypatch.setattr(audit, "run", lambda *a, **k: next(calls))
+    fake = FakeLongtail({"fields": {}, "summary": "x"})
+    h = Harness(eng, client=fake, budget_usd=1.0)
+    h.touched = {sig}
+    report = learn(h, ["longtail"], 10, "claude-sonnet-5-5", fix_rounds=1)
+    assert not any(k.startswith("fix") for k in report)
+    assert all("tools" not in r for r in fake.requests)      # no agent-loop (mapping) call, only the long tail
+
+
+def test_present_and_leak_edge_cases():
+    assert not audit._present("ok", "token=book") and audit._present("ok", "status=OK done")
+    assert audit._present("GET", "get /x") and not audit._present("GET", "target=x")
+    assert audit._present("a\nb", '{"m":"a\\nb"}') or audit._present("a\nb", 'x a\nb')
+    assert audit._tokens("Host WEB01.") == {"host", "web01"}
+    assert audit._tokens('pulled \\"busybox:1.36\\"') == {"pulled", "busybox", "1.36"}     # JSON-escaped quotes
 
 
 class FakeLongtail:
@@ -96,7 +151,7 @@ def test_learn_loop_audits_sends_back_and_the_fixed_rule_passes(tmp_path):
     fake = FakeLongtail({"fields": {"src_ip": "10.20.9.56"}, "summary": "Connection received from host 10.20.9.56."})
     h = Harness(eng, client=fake, budget_usd=1.0)
     h.touched = {sig}                              # as if an agent had just saved this rule
-    report = learn(h, [], 10, "claude-sonnet-5-5", fix_rounds=1)
+    report = learn(h, ["longtail"], 10, "claude-sonnet-5-5", fix_rounds=1, repair=False)
     assert report["audit"]["groups_failing"] == 1 and report["audit"]["routed"] == {"longtail": 1}
     assert report["fix 1: longtail"]["saved"] == 1
     assert report["audit 2"]["groups_failing"] == 0          # the rule saved in the fix round holds on every line
@@ -113,5 +168,5 @@ def test_audit_only_when_fix_rounds_is_zero(tmp_path):
     fake = FakeLongtail({"fields": {}, "summary": "x"})
     h = Harness(eng, client=fake, budget_usd=1.0)
     h.touched = {sig}
-    report = learn(h, [], 10, "claude-sonnet-5-5", fix_rounds=0)
+    report = learn(h, ["longtail"], 10, "claude-sonnet-5-5", fix_rounds=0, repair=False)
     assert report["audit"]["groups_failing"] == 1 and fake.requests == []      # no model call, no spend

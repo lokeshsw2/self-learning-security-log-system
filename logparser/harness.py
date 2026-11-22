@@ -412,7 +412,7 @@ class Harness:
 
 
 def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: str | None = None,
-          fix_rounds: int = 1, on_progress=None) -> dict:
+          fix_rounds: int = 1, on_progress=None, repair: bool = True) -> dict:
     """Run the agents, self-audit what they saved, give failing groups `fix_rounds` more tries with
     the audit findings as feedback, and audit again. Code decides; the agents only write rules."""
     from . import audit
@@ -432,9 +432,10 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
 
     def check(tag: str) -> dict:
         with h.lock:
-            a = audit.run(h.e, sorted(h.touched), max_rounds=h.e.settings.audit_max_rounds)
+            a = audit.run(h.e, sorted(h.touched), max_rounds=h.e.settings.audit_max_rounds, repair=repair)
         h.audits.append(a)
-        report[tag] = {k: a[k] for k in ("groups_checked", "groups_failing", "lines_checked", "by_check", "routed")}
+        report[tag] = {k: a[k] for k in ("groups_checked", "groups_failing", "lines_checked", "by_check", "routed",
+                                         "fixed_by_code")}
         if on_progress:
             on_progress(tag, report[tag])
         return a
@@ -449,11 +450,15 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
         if not back or h.stopped():
             break
         h.touched = set()
+        ran = set()
         for role, q in (("parser-gen", "needs-parser"), ("ocsf-mapping", "needs-mapping"), ("longtail", "longtail")):
             keys = {f["signature"] for f in a["failing"] if f["sent_to"] == q}
-            if keys and role in roles + ["parser-gen", "ocsf-mapping", "longtail"]:
+            if keys and role in roles:          # only agents the caller chose; the rest wait in their queues
                 step(role, keys, f"fix {rnd}: {role}")
-        h.touched |= back            # audit every group that was sent back, fixed or not
+                ran |= keys
+        if not ran:
+            break
+        h.touched |= ran             # audit every group an agent was given, fixed or not
         a = check(f"audit {rnd + 1}")
     return report
 

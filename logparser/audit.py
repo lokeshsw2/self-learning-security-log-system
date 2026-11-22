@@ -13,14 +13,23 @@ Per line:
   time      the event time disagrees with the line's own timestamp (checks.problems)
   outcome   the line says blocked or failed and the event says otherwise (checks.problems)
 Per group:
-  unapplied a rule saved for this exact group (`parser:`, `mapping:`, `longtail:` + its id) is
-            not the one the group uses. No rule the agents write can fix that: the code is
+  unapplied a rule saved for this exact group (`parser:` or `mapping:` + its id) is not the
+            one the group uses. No rule the agents write can fix that: the code is
             wrong, so it goes straight to human review.
 
+Before anything goes to a model, the fixed code re-applies itself: a long-tail rule whose
+description was turned into slots by older code is rebuilt from the agent's own text
+(Tools.retemplate_longtail) and audited again. Only what that does not fix is routed.
+
 A failing group goes back to the queue of the agent that owns the rule, with the problem
-and example lines as feedback. A group that still fails after `audit_max_rounds` audit
-reports goes to human review instead: the agent could not fix it with a rule, so either
+and example lines as feedback. Rounds count agent attempts, not audits: auditing again while
+the item still waits does not use up a round. A group whose agent has tried `audit_max_rounds`
+times and still fails goes to human review: the agent could not fix it with a rule, so either
 the rule language or the code is short of something.
+
+Known limits: a value is checked for presence in its line, not its position, so two swapped
+values that are both in the line (source and destination address) pass; tokens shorter than
+three characters are not checked for leaks.
 """
 from __future__ import annotations
 
@@ -42,14 +51,19 @@ MAX_EXAMPLES = 3
 
 
 def _tokens(text: str) -> set:
-    """Value-like tokens, without the punctuation that ends a sentence or wraps a value."""
-    return {t for t in (x.strip(".-") for x in TOK.findall(text)) if len(t) >= 3}
+    """Value-like tokens, lower-cased, without the punctuation that ends a sentence or wraps a value."""
+    return {t.lower() for t in (x.strip(".-\\") for x in TOK.findall(text)) if len(t) >= 3}   # \" in JSON
 
 
 def _present(v: str, raw: str) -> bool:
     """Is a copied value in the line, allowing for the decoding a parser does (JSON escapes,
-    backslash escapes, case changes from lower/upper)."""
-    if not v or v in raw:
+    backslash escapes, case changes from lower/upper). A short value must be a whole token:
+    "ok" is not in "token=book"."""
+    if not v:
+        return True
+    if len(v) <= 3:
+        return re.search(r"(?<![A-Za-z0-9])" + re.escape(v) + r"(?![A-Za-z0-9])", raw, re.I) is not None
+    if v in raw:
         return True
     low = raw.lower()
     if v.lower() in low:
@@ -198,14 +212,15 @@ def audit_group(e, sig: str, limit: int = 200) -> dict | None:
             msg = ev.get("message")
             if isinstance(msg, str) and msg.strip() != raw.strip():
                 static = sg.template
-                leaked = sorted(t for t in _tokens(msg) if t in group_tokens and t not in raw and t not in static)
+                own = _tokens(raw) | _tokens(static)
+                leaked = sorted(t for t in _tokens(msg) if t in group_tokens and t not in own)
                 if leaked:
                     add("leak", raw, f"the event message names {', '.join(leaked[:4])}, which this line does not "
                                      f"contain (taken from another line of the group): {msg[:160]!r}")
             for p in checks.problems(det, fields, ev, res.get("tags") or [], mapping or {}):
                 add(p.split(":", 1)[0], raw, p)
     if found.get("unparsed") and owner == "mapping":
-        owner = "parser"
+        owner = "longtail" if not g["parser_rule"] and e.snap.rule("longtail:" + g["signature"]) else "parser"
     for u in unapplied:
         found.setdefault("unapplied", {"count": 0, "examples": []})
         found["unapplied"]["count"] += 1
@@ -226,9 +241,14 @@ def route(e, report: dict, max_rounds: int = 2) -> str | None:
     if not report or not report["problems"]:
         return None
     sig = report["signature"]
-    prev = e.store.q("SELECT payload FROM queue WHERE key=? AND name IN ('needs-parser','needs-mapping','longtail') "
-                     "ORDER BY created_at DESC LIMIT 1", (sig,))
-    rounds = (json.loads(prev[0]["payload"]).get("audit_round", 0) if prev else 0) + 1
+    key = f"audit_rounds:{sig}"
+    rounds = int(e.store.get_state(key, 0) or 0)
+    q_owner = QUEUE.get(report["owner"])
+    waiting = q_owner and e.store.q("SELECT 1 FROM queue WHERE name=? AND key=? AND status='open' AND "
+                                    "json_extract(payload,'$.reported_by')='audit'", (q_owner, sig))
+    if not waiting:          # the agent worked the last report (or there was none): this is a new round
+        rounds += 1
+        e.store.set_state(key, rounds)
     g = e.canonical(sig)
     reason = "Self-audit found problems in the events this group's saved rules produce: " + "; ".join(
         f"{code} on {p['count']} of {report['lines']} lines" for code, p in report["problems"].items())
@@ -237,26 +257,45 @@ def route(e, report: dict, max_rounds: int = 2) -> str | None:
                "reported_by": "audit", "audit_round": rounds, "current_rule": report["rule"],
                "current_mapping": report["mapping"], "reason": reason[:800], "examples": examples}
     if rounds > max_rounds or report["owner"] == "code":
+        if e.store.q("SELECT 1 FROM queue WHERE name='human-review' AND key=?", (f"audit:{sig}",)):
+            return "human-review"      # already with a human, open or resolved: never reopened by code
         why = ("A saved rule is not applied to its own group: this is a code problem, not one a rule can fix."
                if report["owner"] == "code" else
                f"The agents could not fix this group in {max_rounds} rounds. Either a rule cannot express what "
                f"is needed or the code is wrong.")
-        e.store.reopen("human-review", f"audit:{sig}", {**payload, "question": f"{why} {reason}"[:900]})
+        e.store.enqueue("human-review", f"audit:{sig}", {**payload, "question": f"{why} {reason}"[:900]})
+        if q_owner:
+            e.store.queue_done(q_owner, sig, "flagged")
         return "human-review"
     q = QUEUE[report["owner"]]
     e.store.reopen(q, sig, payload)
     return q
 
 
-def run(e, sigs: list | None = None, route_failures: bool = True, max_rounds: int = 2, limit: int = 200) -> dict:
+def run(e, sigs: list | None = None, route_failures: bool = True, max_rounds: int = 2, limit: int = 200,
+        repair: bool = True) -> dict:
     """Audit these groups (all groups with a rule when None) and route the failures."""
     if sigs is None:
         sigs = [g["signature"] for g in e.store.groups("merged_into IS NULL AND status != 'split'")
                 if g["parser_rule"] or e.snap.rule("longtail:" + g["signature"])]
-    out = {"groups_checked": 0, "groups_failing": 0, "lines_checked": 0, "by_check": {}, "routed": {}, "failing": []}
+    e.reload()
+    out = {"groups_checked": 0, "groups_failing": 0, "lines_checked": 0, "by_check": {}, "routed": {},
+           "fixed_by_code": 0, "failing": []}
     done = set()
     for sig in sigs:
         rep = audit_group(e, sig, limit)
+        if rep and rep["problems"] and repair and rep["owner"] == "longtail" and set(rep["problems"]) <= {"leak"}:
+            from .tools import Refused, Tools
+            try:
+                if Tools(e, "audit").retemplate_longtail(rep["signature"])["changed"]:
+                    e.reload()
+                    again = audit_group(e, sig, limit)
+                    if again is not None and not again["problems"]:
+                        out["fixed_by_code"] += 1
+                        e.replay_signatures([rep["signature"]])       # stored events and the sink get the fix
+                    rep = again or rep
+            except Refused:
+                pass
         if rep is None or rep["signature"] in done:
             continue
         done.add(rep["signature"])
@@ -274,8 +313,8 @@ def run(e, sigs: list | None = None, route_failures: bool = True, max_rounds: in
                                "owner": rep["owner"], "sent_to": q,
                                "problems": {c: {"count": p["count"], "example": p["examples"][0]}
                                             for c, p in rep["problems"].items()}})
-    e.store.log_tool("audit", "audit", None, True, json.dumps({k: out[k] for k in ("groups_checked", "groups_failing",
-                                                                                "by_check", "routed")})[:1000])
+    e.store.log_tool("audit", "audit", None, True, json.dumps({k: out[k] for k in (
+        "groups_checked", "groups_failing", "by_check", "routed", "fixed_by_code")})[:1000])
     return out
 
 
@@ -292,7 +331,8 @@ def main(argv=None) -> None:
     ap.add_argument("--limit", type=int, default=200, help="lines per group")
     a = ap.parse_args(argv)
     e = open_engine(types.SimpleNamespace(db=a.db, settings=a.settings))
-    res = run(e, a.sig, route_failures=a.route, max_rounds=e.settings.audit_max_rounds, limit=a.limit)
+    res = run(e, a.sig, route_failures=a.route, max_rounds=e.settings.audit_max_rounds, limit=a.limit,
+              repair=a.route)
     json.dump(res, sys.stdout, indent=1, default=str)
     print()
 
