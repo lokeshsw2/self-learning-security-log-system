@@ -218,6 +218,73 @@ export const api = {
   stopStream: (id: string) => call<{ stopped: boolean }>(`/api/streams/stop?${qs({ id })}`, { method: "POST" }),
 }
 
+export interface ReviewGroup {
+  signature: string
+  source: string
+  format: string
+  count: number
+  template: string
+  status: string
+  labels: Record<string, string>
+  rules: string[]
+  samples: string[]
+}
+
+export interface ReviewItem {
+  name: string
+  key: string
+  status: string
+  at: number
+  attempts: number
+  why: string
+  agent: string | null
+  examples: { line?: string; problem?: string; check?: string; where?: string }[]
+  group: ReviewGroup | null
+}
+
+export interface DriftRow {
+  signature: string
+  source: string
+  format: string
+  count: number
+  template: string
+  failures?: number
+  rule?: string
+  new_signatures?: number
+  first_batch?: number
+  known_groups?: number
+  last_batch?: number
+}
+
+export interface LsAuditResult {
+  groups_checked: number
+  groups_failing: number
+  lines_checked: number
+  by_check: Record<string, number>
+  routed: Record<string, number>
+  failing?: { signature: string; lines: number; problems: Record<string, { count: number; examples: { line: string; problem: string; where: string }[] }> }[]
+}
+
+export interface Drift {
+  batch: number
+  rule_failing: DriftRow[]
+  new_key_sets: DriftRow[]
+  new_format_known_source: DriftRow[]
+  went_quiet: DriftRow[]
+  last_lsaudit: (LsAuditResult & { failing: { signature: string; checks: string[] }[] }) | null
+  lsaudit_run: { running: boolean; started: number; finished?: number; result: LsAuditResult | null; error: string | null } | null
+}
+
+export const reviewApi = {
+  inbox: () => call<ReviewItem[]>("/api/review/inbox"),
+  drift: () => call<Drift>("/api/review/drift"),
+  answer: (name: string, key: string, answer: string) =>
+    call<{ sent_to?: string; decision?: boolean }>("/api/review/answer", { method: "POST", body: JSON.stringify({ name, key, answer }) }),
+  resolve: (name: string, key: string, action: "dismiss" | "ignore_group") =>
+    call<{ resolved: string }>("/api/review/resolve", { method: "POST", body: JSON.stringify({ name, key, action }) }),
+  lsaudit: () => call<Drift["lsaudit_run"]>("/api/review/lsaudit", { method: "POST", body: "{}" }),
+}
+
 export const fmt = (n: number | string | undefined | null) => (Number(n) || 0).toLocaleString()
 
 export function ago(t?: number) {

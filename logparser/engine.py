@@ -902,7 +902,7 @@ class Engine:
             self.store.prune(s.retain_parsed, s.retain_unparsed)
         for sig in list(self._dirty_groups):
             g = self.groups.get(sig)
-            if not g or g["merged_into"]:
+            if not g or g["merged_into"] or g["status"] == "ignored":     # a reviewer chose to leave it unparsed
                 continue
             payload = {"signature": sig, "bucket": g["bucket"], "source": g["source"], "count": g["count"]}
             if not g["parser_rule"]:
@@ -920,12 +920,12 @@ class Engine:
                     self._queue_ops.append(("enqueue", "needs-mapping", sig, payload))
         if final:   # end of input: parsed groups still without a class mapping get their turn too
             for sig, g in self.groups.items():
-                if g["parser_rule"] and not g["mapping_rule"] and not g["merged_into"] and g["status"] != "split" \
+                if g["parser_rule"] and not g["mapping_rule"] and not g["merged_into"] and g["status"] not in ("split", "ignored") \
                         and g["count"] > 0:
                     self._queue_ops.append(("enqueue", "needs-mapping", sig, {
                         "signature": sig, "bucket": g["bucket"], "source": g["source"], "count": g["count"]}))
         for sig, g in self.groups.items():
-            if g["merged_into"] or g["parser_rule"] or g["status"] != "new":
+            if g["merged_into"] or g["parser_rule"] or g["status"] != "new":     # also skips ignored groups
                 continue
             idle = self.batch_no - (g["last_batch"] or 0)
             if final or idle >= s.longtail_idle_batches:

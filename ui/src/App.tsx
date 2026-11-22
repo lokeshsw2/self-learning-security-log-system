@@ -4,6 +4,7 @@ import { go, useRoute } from "@/lib/router"
 import { EventsPage } from "@/pages/Events"
 import { IngestPage } from "@/pages/Ingest"
 import { QueuePage } from "@/pages/Queue"
+import { ReviewPage } from "@/pages/Review"
 import { RulePage, RulesPage } from "@/pages/Rules"
 import { GroupPage, SourcePage, SourcesPage } from "@/pages/Sources"
 import { UnparsedPage } from "@/pages/Unparsed"
@@ -15,6 +16,7 @@ const TABS = [
   { id: "sources", label: "Sources & groups" },
   { id: "rules", label: "Rules" },
   { id: "queue", label: "AI agents" },
+  { id: "review", label: "Review" },
 ]
 
 // detail views highlight their parent tab
@@ -33,6 +35,7 @@ export default function App() {
     case "rules": page = <RulesPage route={route} />; break
     case "rule": page = <RulePage ruleId={route.arg} />; break
     case "queue": page = <QueuePage />; break
+    case "review": page = <ReviewPage />; break
     default: page = <IngestPage />
   }
 

@@ -336,3 +336,107 @@ def test_json_payload_needs_the_json_step(tmp_path):
         assert not res["ok"] and "JSON object" in res["error"] and not Tools.sandbox.calls
     finally:
         Tools.sandbox = None
+
+
+# ------------------------------------------------------------------ phase 4: audit, drift, review
+def test_lsaudit_catches_new_lines_routes_back_then_to_a_human(ssh):
+    from logparser import lsaudit, review
+    eng, gid = ssh
+    registry.save_rule(eng.store, "lsfilter:" + gid, RULE)
+    eng.reload()
+    ok = FakeSandbox(_ssh_event)
+    rep = lsaudit.run(eng, ok)
+    assert rep["groups_checked"] == 1 and rep["groups_failing"] == 0
+    # the format changed: new lines no longer match the filter
+    drifted = FakeSandbox(lambda r: {"tags": ["_lp_grokfail"]} if r["id"] % 2 else _ssh_event(r))
+    rep = lsaudit.run(eng, drifted)
+    assert rep["groups_failing"] == 1 and rep["routed"] == {"needs-lsfilter": 1}
+    item = next(i for i in eng.store.queue_items("needs-lsfilter") if i["key"] == gid)
+    assert item["payload"]["reported_by"] == "audit" and item["payload"]["examples"]
+    assert item["payload"]["current_rule"]["class"] == "authentication"
+    # still waiting for the agent: a second audit does not use up a round
+    lsaudit.run(eng, drifted)
+    assert eng.store.get_state(f"lsaudit_rounds:{gid}") == 1
+    for _ in range(2):          # the agent "worked" it and it failed again, twice
+        eng.store.queue_done("needs-lsfilter", gid)
+        lsaudit.run(eng, drifted)
+    assert any(i["key"] == f"lsaudit:{gid}" for i in eng.store.queue_items("human-review"))
+    inbox = review.inbox(eng)
+    hr = next(x for x in inbox if x["name"] == "human-review")
+    assert hr["agent"] is None and hr["group"]["signature"] == gid and hr["examples"]
+    # the person answers: back to the filter writer with the answer, rounds reset, a correction is kept
+    out = review.answer(eng, "human-review", f"lsaudit:{gid}", "The new lines have a second port field.", "ana")
+    assert out == {"sent_to": "needs-lsfilter", "signature": gid}
+    item = next(i for i in eng.store.queue_items("needs-lsfilter") if i["key"] == gid)
+    assert item["payload"]["human_answer"].startswith("The new lines") and eng.store.get_state(f"lsaudit_rounds:{gid}") == 0
+    assert eng.store.q("SELECT kind, author FROM corrections")[-1]["kind"] == "ls-direct"
+    assert not any(x["name"] == "human-review" for x in review.inbox(eng))
+
+
+def test_review_flagged_items_answer_ignore_dismiss(ssh):
+    from logparser import review
+    eng, gid = ssh
+    t = Tools(eng, "x")
+    D.enqueue(eng)
+    t.flag("needs-lsfilter", gid, "FLAG: no class fits")
+    eng.store.enqueue("needs-source", "-|weird|-", {"source": "-|weird|-"})
+    t.flag("needs-source", "-|weird|-", "FLAG: mixes two products")
+    items = {x["key"]: x for x in review.inbox(eng)}
+    assert items[gid]["why"] == "FLAG: no class fits" and items[gid]["agent"] == "ls-direct"
+    assert items[gid]["group"]["samples"]
+    with pytest.raises(ValueError):
+        review.answer(eng, "needs-lsfilter", gid, "  ")
+    review.answer(eng, "needs-lsfilter", gid, "Use authentication; status is in the word Failed.")
+    item = next(i for i in eng.store.queue_items("needs-lsfilter") if i["key"] == gid)
+    assert item["payload"]["previous_problem"] == "FLAG: no class fits" and "flag_reason" not in item["payload"]
+    # a source question has no group: it becomes a decision the agents read
+    assert review.answer(eng, "needs-source", "-|weird|-", "Split by app name.") == {"decision": True}
+    assert eng.store.q("SELECT answer FROM decisions")[-1]["answer"] == "Split by app name."
+    # ignoring a group: no agent takes it up again
+    t.flag("needs-lsfilter", gid, "FLAG: again")
+    review.resolve(eng, "needs-lsfilter", gid, "ignore_group")
+    assert eng.canonical(gid)["status"] == "ignored" and not eng.store.queue_items("needs-lsfilter")
+    assert D.enqueue(eng) == 0
+    feed(eng, eng.store.path and __import__("pathlib").Path(eng.store.path).parent, SSH, name="more.log")
+    assert eng.canonical(gid)["status"] == "ignored"
+    with pytest.raises(ValueError):
+        review.resolve(eng, "needs-lsfilter", gid, "delete_everything")
+    assert review.inbox(eng) == []
+
+
+def test_drift_report_names_new_formats_of_known_sources(tmp_path):
+    from logparser import review
+    eng = make(tmp_path)
+    feed(eng, tmp_path, SSH)
+    gid = next(g["signature"] for g in eng.groups.values() if g["count"] == 8)
+    registry.save_rule(eng.store, "lsfilter:" + gid, RULE)
+    eng.reload()
+    new = ["Dec 10 07:00:%02d LabSZ sshd[24200]: Disconnected from authenticating user root 10.0.0.%d port 22 [preauth]"
+           % (i, i) for i in range(5)]
+    feed(eng, tmp_path, new, name="b.log")
+    d = review.drift(eng)
+    srcs = {r["signature"] for r in d["new_format_known_source"]}
+    assert srcs and gid not in srcs
+    assert all(r["source"] == eng.canonical(gid)["source"] for r in d["new_format_known_source"])
+
+
+def test_learn_audits_variant_b_saves_and_gives_a_fix_round(ssh):
+    eng, gid = ssh
+    D.enqueue(eng)
+    class CountingSandbox(FakeSandbox):
+        """Call 1 is the save's test, call 2 the audit (fails on half the lines), then the fix and its audit pass."""
+        def run(self, text, records, tables, tz="UTC"):
+            self.calls.append(text)
+            bad = len(self.calls) == 2
+            return {"events": {r["id"]: ({"tags": ["_lp_grokfail"]} if bad and r["id"] % 2 else _ssh_event(r))
+                               for r in records}}
+    Tools.sandbox = sb = CountingSandbox(None)
+    save = {"tool": "save_lsfilter", "input": {"group": gid, "rule": RULE, "labels": {"vendor": "OpenBSD", "product": "OpenSSH"}}}
+    fake = FakeClient([save, save])
+    h = Harness(eng, client=fake)
+    rep = learn(h, ["ls-direct"], limit=1, longtail_model="m")
+    assert rep["ls-audit"]["groups_checked"] == 1
+    assert rep["ls-audit"]["groups_failing"] == 1 and rep["fix 1: ls-direct"]["saved"] == 1, rep
+    assert rep["ls-audit 2"]["groups_failing"] == 0 and len(sb.calls) == 4
+    feedback = json.loads(json.dumps(fake.requests[1]["messages"][0]["content"]))
+    assert "reported_by" in feedback and "audit" in feedback        # the fix round saw the audit's findings

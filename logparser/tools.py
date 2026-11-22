@@ -1137,7 +1137,7 @@ class Tools:
     def flag(self, queue: str, key: str, reason: str) -> dict:
         """Give up on an item and hand it to a human."""
         self.store.x("UPDATE queue SET status='flagged', payload=json_set(payload,'$.flag_reason',?), done_at=? "
-                     "WHERE name=? AND key=?", (reason[:500], time.time(), queue, key))
+                     "WHERE name=? AND key=?", (reason[:1500], time.time(), queue, key))
         self._log("flag", f"{queue}/{key}", True, reason[:300])
         return {"flagged": True}
 

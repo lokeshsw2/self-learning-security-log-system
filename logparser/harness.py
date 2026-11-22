@@ -252,6 +252,7 @@ class Harness:
         self.current: dict | None = None      # what the harness is working on, for a progress view
         self.results: list = []               # finished items, newest last
         self.touched: set = set()             # groups whose rules were saved in this run (audited after)
+        self.touched_b: set = set()           # groups whose Variant B filter was saved (audited in the sandbox)
         self.audits: list = []                # self-audit reports of this run
 
     def stopped(self) -> bool:
@@ -365,8 +366,9 @@ class Harness:
             messages.append({"role": "user", "content": results})
             if saved and not more:
                 break
-        if saved and target == "group" and role != "ls-direct":   # Variant B is checked in the sandbox, not by the engine audit
-            self.touched.add(key)
+        if saved and target == "group":
+            # Variant B filters are audited in the Logstash sandbox (lsaudit), Variant A rules by the engine audit
+            (self.touched_b if role == "ls-direct" else self.touched).add(key)
         if saved and more and reason != "stopped by the user":
             # rules were saved, but the agent stopped with lines of other header formats unread: a human
             # looks at the rest, so nobody pays to ask again
@@ -517,6 +519,31 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
                 pass
 
 
+def ls_check(h, roles, fix_rounds, step, report, on_progress) -> None:
+    """Variant B: audit the saved filters on more and newer lines; failing ones get `fix_rounds` more tries."""
+    from . import lsaudit
+
+    def audit(tag: str) -> dict:
+        with h.lock:
+            a = lsaudit.run(h.e, Tools(h.e, "lsaudit")._sandbox(), sorted(h.touched_b),
+                            max_rounds=h.e.settings.audit_max_rounds)
+        h.audits.append(a)
+        report[tag] = {k: a[k] for k in ("groups_checked", "groups_failing", "lines_checked", "by_check", "routed")}
+        if on_progress:
+            on_progress(tag, report[tag])
+        return a
+
+    a = audit("ls-audit")
+    for rnd in range(1, fix_rounds + 1):
+        back = {f["signature"] for f in a["failing"]} & {i["key"] for i in h.e.store.queue_items("needs-lsfilter")}
+        if not back or h.stopped():
+            break
+        h.touched_b = set()
+        step("ls-direct", back, f"fix {rnd}: ls-direct")
+        h.touched_b |= back
+        a = audit(f"ls-audit {rnd + 1}")
+
+
 def _learn(h, roles, limit, longtail_model, bucket, fix_rounds, on_progress, repair, only, shares, report) -> dict:
     from . import audit
 
@@ -567,6 +594,8 @@ def _learn(h, roles, limit, longtail_model, bucket, fix_rounds, on_progress, rep
             h.role_until = None
         else:
             step(role, only, role)
+    if h.touched_b:
+        ls_check(h, roles, fix_rounds, step, report, on_progress)
     if not h.touched:
         return report
     a = check("audit")

@@ -385,6 +385,63 @@ class App:
             self.learn_run["_stop"].set()
         return self.learn_status()
 
+    # ------------------------------------------------------------------ review (phase 4)
+    def review_inbox(self) -> list:
+        from . import review
+        with self.lock:
+            return review.inbox(self.eng)
+
+    def review_answer(self, b: dict) -> dict:
+        from . import review
+        with self.lock:
+            return review.answer(self.eng, str(b["name"]), str(b["key"]), str(b.get("answer") or ""),
+                                 str(b.get("author") or "reviewer")[:60])
+
+    def review_resolve(self, b: dict) -> dict:
+        from . import review
+        with self.lock:
+            return review.resolve(self.eng, str(b["name"]), str(b["key"]), str(b.get("action") or ""),
+                                  str(b.get("author") or "reviewer")[:60])
+
+    def review_drift(self) -> dict:
+        from . import review
+        with self.lock:
+            out = review.drift(self.eng)
+        out["lsaudit_run"] = {k: v for k, v in (self.lsaudit_run or {}).items() if not k.startswith("_")} or None
+        return out
+
+    lsaudit_run: dict | None = None
+
+    def lsaudit_start(self, route: bool = True) -> dict:
+        """Run the Variant B audit (newest stored lines through each saved filter, and ClickHouse events) in
+        the background; the engine lock is held while it runs."""
+        from . import lsaudit
+        from .tools import Tools
+        if self.lsaudit_run and self.lsaudit_run.get("running"):
+            raise ValueError("an audit is already running")
+        run = self.lsaudit_run = {"running": True, "started": time.time(), "result": None, "error": None}
+        ch = (self.ch_url, self.ch_db) if getattr(self, "ch_db", None) else None
+
+        def work():
+            sb = Tools(self.eng, "lsaudit")._sandbox()
+            try:
+                with self.lock:
+                    res = lsaudit.run(self.eng, sb, route_failures=route,
+                                      max_rounds=self.eng.settings.audit_max_rounds, clickhouse=ch)
+                run["result"] = {k: res[k] for k in ("groups_checked", "groups_failing", "lines_checked",
+                                                      "by_check", "routed")} | {"failing": res["failing"][:30]}
+            except Exception as exc:
+                run["error"] = str(exc)[:500]
+            finally:
+                run["running"] = False
+                run["finished"] = time.time()
+                try:
+                    sb.stop()
+                except Exception:
+                    pass
+        threading.Thread(target=work, daemon=True).start()
+        return {k: v for k, v in run.items()}
+
     def queue(self) -> list:
         with self.lock:
             return [dict(r) | {"payload": json.loads(r["payload"])} for r in self.eng.store.q(
@@ -440,6 +497,8 @@ def make_handler(app: App):
                     "/api/queue": lambda: app.queue(),
                     "/api/streams": lambda: [app._pub(x) for x in app.streams.values()],
                     "/api/learn": lambda: app.learn_status(),
+                    "/api/review/inbox": lambda: app.review_inbox(),
+                    "/api/review/drift": lambda: app.review_drift(),
                 }
                 if u.path in routes:
                     return self._json(routes[u.path]())
@@ -472,6 +531,16 @@ def make_handler(app: App):
                         return self._json(app.audit_all())
                     except ValueError as exc:
                         return self._json({"error": str(exc)}, 400)
+                if u.path in ("/api/review/answer", "/api/review/resolve", "/api/review/lsaudit"):
+                    b = json.loads(self._body() or b"{}")
+                    try:
+                        if u.path == "/api/review/answer":
+                            return self._json(app.review_answer(b))
+                        if u.path == "/api/review/resolve":
+                            return self._json(app.review_resolve(b))
+                        return self._json(app.lsaudit_start(bool(b.get("route", True))))
+                    except (ValueError, KeyError) as exc:
+                        return self._json({"error": str(exc)}, 400)
                 if u.path == "/api/learn/stop":
                     return self._json(app.learn_stop())
                 if u.path == "/api/streams/stop":
@@ -494,8 +563,11 @@ def main() -> None:
     ap.add_argument("--settings")
     ap.add_argument("--port", type=int, default=8090)
     ap.add_argument("--clickhouse", default="http://localhost:8123")
+    ap.add_argument("--ch-db", default=None, help="database of the service's OCSF events (e.g. lpsvc), checked by "
+                                                  "the Variant B audit")
     a = ap.parse_args()
     app = App(a.db, a.settings, a.clickhouse)
+    app.ch_url, app.ch_db = a.clickhouse, a.ch_db
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(app))
     print(f"UI on http://127.0.0.1:{a.port}", flush=True)
     srv.serve_forever()
