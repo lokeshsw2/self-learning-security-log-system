@@ -907,6 +907,9 @@ class Tools:
         items = []
         for it in self.store.queue_items("longtail"):
             g = self.e.canonical(it["key"])
+            if g and self.e.snap.rule("longtail:" + g["signature"]):
+                self.store.queue_done("longtail", it["key"])      # learned already: never pay for it twice
+                continue
             if not g or g["parser_rule"] or (bucket and bucket not in g["bucket"] + "|" + g["source"]):
                 continue
             s = self.store.samples(g["signature"])

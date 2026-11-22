@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ErrorNote, Mono, useLoad } from "@/components/common"
 import { api, ago, fmt, type LearnRun, type Role } from "@/lib/api"
@@ -18,11 +19,17 @@ const AGENTS: { role: Role; label: string; note: string }[] = [
   { role: "grouping-repair", label: "Fix grouping", note: "merge, split or remask groups" },
   { role: "parser-gen", label: "Write parsers", note: "field extraction per group" },
   { role: "ocsf-mapping", label: "Map to OCSF", note: "class and attributes per group" },
-  { role: "longtail", label: "Long tail", note: "rare lines, small model, batched" },
+  { role: "longtail", label: "Long tail", note: "rare lines, batched" },
 ]
 const LABEL = Object.fromEntries(AGENTS.map((a) => [a.role, a.label])) as Record<Role, string>
 
 const usd = (n: number) => "$" + n.toFixed(n < 1 ? 3 : 2)
+const MODEL_NAME: Record<string, string> = {
+  "claude-sonnet-5-5": "Claude Sonnet 5.5",
+  "claude-opus-5-5": "Claude Opus 5.5",
+  "claude-haiku-5-5": "Claude Haiku 5.5",
+}
+const modelName = (id: string) => MODEL_NAME[id] ?? id
 
 export function LearnPanel({ onChange }: { onChange?: () => void }) {
   const { data, error, reload } = useLoad(() => api.learn(), [])
@@ -30,6 +37,8 @@ export function LearnPanel({ onChange }: { onChange?: () => void }) {
   const [limit, setLimit] = useState("5")
   const [budget, setBudget] = useState("2")
   const [busy, setBusy] = useState(false)
+  const [model, setModel] = useState<string | null>(null)
+  const chosen = model ?? data?.default_model ?? "claude-sonnet-5-5"
   const running = !!data?.run?.running
 
   useEffect(() => {
@@ -47,7 +56,7 @@ export function LearnPanel({ onChange }: { onChange?: () => void }) {
   async function start() {
     setBusy(true)
     try {
-      await api.startLearn(roles, Number(limit) || 5, Number(budget) || 2)
+      await api.startLearn(roles, Number(limit) || 5, Number(budget) || 2, chosen)
       toast.success("Learning run started")
       reload()
     } catch (e) {
@@ -112,6 +121,24 @@ export function LearnPanel({ onChange }: { onChange?: () => void }) {
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="grid gap-1.5">
+            <Label>Model</Label>
+            <Select value={chosen} onValueChange={(v) => setModel(String(v))} disabled={running}>
+              <SelectTrigger className="w-64">
+                <SelectValue>{(v: string) => modelName(v)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {(data?.models ?? []).map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {modelName(m.id)}{" "}
+                    <span className="text-xs text-muted-foreground">
+                      ${m.input} / ${m.output} per M tokens
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
             <Label htmlFor="learn-limit">Items per agent</Label>
             <Input id="learn-limit" type="number" min={1} max={200} value={limit} onChange={(e) => setLimit(e.target.value)}
               disabled={running} className="w-32" />
@@ -148,7 +175,7 @@ function RunView({ run }: { run: LearnRun }) {
     <div className="space-y-3 rounded-lg border p-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {run.running ? <Badge>running</Badge> : <Badge variant="secondary">finished</Badge>}
-        <span className="text-muted-foreground">started {ago(run.started)}</span>
+        <span className="text-muted-foreground">started {ago(run.started)} · {modelName(run.model)}</span>
         <span>· {fmt(run.results.length)} items done, {fmt(saved)} saved</span>
         {run.current && (
           <span className="text-muted-foreground">

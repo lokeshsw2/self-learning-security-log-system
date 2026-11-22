@@ -158,6 +158,7 @@ export interface LearnRun {
   roles: Role[]
   limit: number
   budget_usd: number
+  model: string
   spent_usd: number
   running: boolean
   started: number
@@ -170,6 +171,8 @@ export interface LearnRun {
 }
 
 export interface LearnStatus {
+  models: { id: string; input: number; output: number }[]
+  default_model: string
   key_configured: boolean
   waiting: Record<Role, number>
   run: LearnRun | null
@@ -187,8 +190,11 @@ const qs = (p: Record<string, string | number | undefined>) =>
 
 export const api = {
   overview: () => call<Overview>("/api/overview"),
-  ingest: (lines: string[], ingestId: string) =>
-    call<IngestResult>(`/api/ingest?${qs({ ingest_id: ingestId })}`, { method: "POST", body: lines.join("\n") }),
+  ingest: (lines: string[], ingestId: string, final = false) =>
+    call<IngestResult>(`/api/ingest?${qs({ ingest_id: ingestId, final: final ? 1 : undefined })}`, {
+      method: "POST",
+      body: lines.join("\n"),
+    }),
   events: (p: { ingest_id?: string; source?: string; group?: string; class_uid?: string; q?: string; limit?: number; offset?: number }) =>
     call<{ total: number; rows: EventRow[] }>(`/api/events?${qs(p)}`),
   unparsed: (p: { ingest_id?: string; group?: string } = {}) =>
@@ -204,8 +210,8 @@ export const api = {
   startStream: (kind: string, target: string) =>
     call<Stream>("/api/streams", { method: "POST", body: JSON.stringify({ kind, target }) }),
   learn: () => call<LearnStatus>("/api/learn"),
-  startLearn: (roles: Role[], limit: number, budget_usd: number) =>
-    call<LearnStatus>("/api/learn", { method: "POST", body: JSON.stringify({ roles, limit, budget_usd }) }),
+  startLearn: (roles: Role[], limit: number, budget_usd: number, model: string) =>
+    call<LearnStatus>("/api/learn", { method: "POST", body: JSON.stringify({ roles, limit, budget_usd, model }) }),
   stopLearn: () => call<LearnStatus>("/api/learn/stop", { method: "POST" }),
   stopStream: (id: string) => call<{ stopped: boolean }>(`/api/streams/stop?${qs({ id })}`, { method: "POST" }),
 }

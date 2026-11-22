@@ -25,6 +25,7 @@ from .sink import ClickHouseSink
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BATCH = 2000
+DEFAULT_LEARN_MODEL = "claude-sonnet-5-5"
 
 
 def _esc(v: str) -> str:
@@ -42,7 +43,9 @@ class App:
         self.learn_client = None          # tests put a fake model client here
 
     # ------------------------------------------------------------------ ingest
-    def ingest(self, lines: list, ingest_id: str | None = None, label: str | None = None) -> dict:
+    def ingest(self, lines: list, ingest_id: str | None = None, label: str | None = None, final: bool = False) -> dict:
+        """`final`: the end of a pasted or uploaded file. Groups still below the parser threshold
+        then go to the long tail right away instead of waiting for later batches."""
         ingest_id = ingest_id or time.strftime("ui-%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
         lines = [ln.rstrip("\r") for ln in lines if ln.strip()]
         tot: dict = {"ingest_id": ingest_id, "records": 0, "parsed": 0, "pending": 0, "dlq": 0, "new_groups": 0}
@@ -52,6 +55,8 @@ class App:
                 st = self.eng.process(recs)
                 for k in ("records", "parsed", "pending", "dlq", "new_groups"):
                     tot[k] += st.get(k, 0)
+            if final:
+                self.eng.finalize()
         return tot
 
     # ------------------------------------------------------------------ streams
@@ -314,11 +319,16 @@ class App:
             pub = {k: v for k, v in run.items() if not k.startswith("_")}
             pub.update(spent_usd=round(h.spent_usd, 4) if h else 0.0, current=h.current if h else None,
                        results=list(h.results[-200:]) if h else [])
-        return {"key_configured": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+        from .harness import PRICES
+        return {"models": [{"id": m, "input": p[0], "output": p[1]} for m, p in PRICES.items()],
+                "default_model": DEFAULT_LEARN_MODEL,
+                "key_configured": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
                 "waiting": waiting, "run": pub}
 
-    def learn_start(self, roles: list, limit: int, budget_usd: float) -> dict:
-        from .harness import MODEL, ORDER, SMALL_MODEL, Harness
+    def learn_start(self, roles: list, limit: int, budget_usd: float, model: str = DEFAULT_LEARN_MODEL) -> dict:
+        from .harness import ORDER, PRICES, Harness
+        if model not in PRICES:
+            raise ValueError(f"model must be one of {sorted(PRICES)}")
         if self.learn_run and self.learn_run["running"]:
             raise ValueError("a learning run is already going")
         roles = [r for r in (ORDER + ["longtail"]) if r in roles]
@@ -328,14 +338,14 @@ class App:
             raise ValueError("budget must be between $0 and $100")
         limit = max(1, min(int(limit), 200))
         stop = threading.Event()
-        run = {"id": uuid.uuid4().hex[:8], "roles": roles, "limit": limit, "budget_usd": budget_usd,
+        run = {"id": uuid.uuid4().hex[:8], "roles": roles, "limit": limit, "budget_usd": budget_usd, "model": model,
                "running": True, "started": time.time(), "finished": None, "role": None, "error": None,
                "summary": {}, "_stop": stop, "_h": None}
         self.learn_run = run
 
         def go():
             try:
-                h = Harness(self.eng, client=self.learn_client, model=MODEL, budget_usd=budget_usd,
+                h = Harness(self.eng, client=self.learn_client, model=model, budget_usd=budget_usd,
                             lock=self.lock, stop=stop)
                 run["_h"] = h
                 for role in roles:
@@ -344,7 +354,7 @@ class App:
                         continue
                     run["role"] = role
                     if role == "longtail":
-                        run["summary"][role] = h.run_longtail(limit, model=SMALL_MODEL)
+                        run["summary"][role] = h.run_longtail(limit, model=model)
                     else:
                         res = h.run_queue(role, limit)
                         run["summary"][role] = {"items": len(res), "saved": sum(r["saved"] for r in res),
@@ -432,7 +442,8 @@ def make_handler(app: App):
             try:
                 if u.path == "/api/ingest":
                     text = self._body().decode("utf-8", "replace")
-                    return self._json(app.ingest(text.split("\n"), p.get("ingest_id") or None, p.get("label") or None))
+                    return self._json(app.ingest(text.split("\n"), p.get("ingest_id") or None, p.get("label") or None,
+                                                 final=p.get("final") == "1"))
                 if u.path == "/api/streams":
                     b = json.loads(self._body() or b"{}")
                     return self._json(app.start_stream(b.get("kind", "file"), b["target"], b.get("label") or None))
@@ -440,7 +451,8 @@ def make_handler(app: App):
                     b = json.loads(self._body() or b"{}")
                     try:
                         return self._json(app.learn_start(list(b.get("roles") or []), int(b.get("limit", 10)),
-                                                          float(b.get("budget_usd", 2))))
+                                                          float(b.get("budget_usd", 2)),
+                                                          str(b.get("model") or DEFAULT_LEARN_MODEL)))
                     except ValueError as exc:
                         return self._json({"error": str(exc)}, 400)
                 if u.path == "/api/learn/stop":

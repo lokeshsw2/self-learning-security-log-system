@@ -464,3 +464,14 @@ def test_longtail_parts_must_hold_on_every_stored_line(tmp_path):
     assert res["dropped"] == ["src_ip"] and res["kept"] == ["dst_ip"]
     f = json.loads(eng.store.q("SELECT fields FROM events e JOIN raw r ON r.id=e.raw_id WHERE r.raw=?", (PG2,))[0]["fields"])
     assert f["dst_ip"] == "10.20.1.24 port"
+
+
+def test_longtail_with_a_rule_is_not_queued_again(tmp_path):
+    eng = make(tmp_path, group_threshold=50)
+    feed(eng, tmp_path, [PG])
+    sig = eng.store.queue_items("longtail")[0]["key"]
+    Tools(eng, "longtail").save_longtail(sig, {"src_ip": "10.20.9.56"}, "connection received")
+    assert not eng.store.queue_items("longtail")
+    feed(eng, tmp_path, [PG2])                       # the group is seen again and finalized again
+    assert not eng.store.queue_items("longtail")
+    assert Tools(eng, "longtail").longtail_batch()["items"] == []

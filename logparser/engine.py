@@ -886,6 +886,8 @@ class Engine:
             if final or idle >= s.longtail_idle_batches:
                 g["status"] = "longtail"
                 self._dirty_groups.add(sig)
+                if self.snap.rule("longtail:" + sig):
+                    continue        # already learned (here or imported): nothing for the agent to do
                 self._queue_ops.append(("enqueue", "longtail", sig, {"signature": sig, "bucket": g["bucket"],
                                                                       "source": g["source"], "count": g["count"]}))
         # explosion guard

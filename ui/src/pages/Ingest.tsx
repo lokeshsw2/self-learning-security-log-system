@@ -43,7 +43,7 @@ export function IngestPage() {
     try {
       for (let i = 0; i < lines.length; i += CHUNK) {
         setBusy(`Processing ${fmt(i)} of ${fmt(lines.length)} lines…`)
-        const r = await api.ingest(lines.slice(i, i + CHUNK), id)
+        const r = await api.ingest(lines.slice(i, i + CHUNK), id, i + CHUNK >= lines.length)
         tot.records += r.records
         tot.parsed += r.parsed
         tot.pending += r.pending
