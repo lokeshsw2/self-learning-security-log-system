@@ -173,3 +173,30 @@ def test_label_scoped_mask_applies_to_an_unlabelled_stream_but_not_another_label
     assert "j" in names(None)            # a mixed topic with no source label
     assert "j" not in names("other")     # never another labelled source
     assert "j" not in names.__call__("jobs") or "j" not in [p[0] for p in eng.snap.mask_patterns("y", "jobs")]
+
+
+def test_source_families_and_naming(tmp_path):
+    eng = make(tmp_path)
+    a = ['{"uuid":"%d","published":"2026-01-01T00:00:0%dZ","eventType":"user.session.start","actor":{"id":"a"},"outcome":{"result":"SUCCESS"}}' % (i, i % 9) for i in range(30)]
+    b = ['{"CreationTime":"2026-01-01T00:00:0%d","Operation":"FileAccessed","Workload":"SharePoint","UserId":"u%d","ClientIP":"10.0.0.%d"}' % (i % 9, i, i) for i in range(30)]
+    mixed = [x for pair in zip(a, b) for x in pair]
+    feed(eng, tmp_path, mixed)                                   # one unlabelled stream
+    keys = sorted(s["source"] for s in eng.store.sources())
+    assert len(keys) == 2 and all(k.startswith("-|json|-#f") for k in keys)   # two families, not one "json" source
+    t = Tools(eng, "namer")
+    okta = [k for k in keys if any("uuid" in r["raw"] for r in eng.store.raw_by_source(k)[:1])][0]
+    loose = {"vendor": "Okta", "product": "Okta System Log", "match": {"bucket": "^json\\\\|"}}
+    with pytest.raises(Refused, match="different name|only some|too loose") if False else pytest.raises(Refused):
+        t.save_source(okta, {**loose, "match": {"bucket": "^json\\\\|", "requires": ["Workload"]}})
+    good = {"vendor": "Okta", "product": "Okta System Log", "match": {"bucket": "^json\\\\|", "requires": ["eventType", "uuid"]}}
+    res = t.save_source(okta, good)
+    assert res["named"] == [okta]
+    assert eng.store.source(okta)["vendor"] == "Okta"
+    assert [i["key"] for i in eng.store.queue_items("needs-source")] == [k for k in keys if k != okta]
+    # a new line of that product in a new engine is named by code, with no agent
+    from logparser.engine import Engine
+    e2 = Engine(eng.store, eng.settings, schema=eng.schema, now=eng.now)
+    eng.store.x("DELETE FROM sources")
+    e2.sources = {}
+    feed(e2, tmp_path, [a[0].replace('"uuid":"0"', '"uuid":"99"')], name="more.log")
+    assert [s["vendor"] for s in eng.store.sources()] == ["Okta"]

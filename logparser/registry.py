@@ -102,6 +102,13 @@ SCHEMAS: dict[str, dict] = {
                 "confidence": {"enum": ["high", "medium", "low"]}, "note": {"type": "string"}}}}}},
     "words": {"type": "object", "required": ["words"], "additionalProperties": False, "properties": {
         "words": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z_\\- ]*$"}, "maxItems": 400}}},
+    "source": {"type": "object", "required": ["vendor", "product", "match"], "additionalProperties": False, "properties": {
+        "vendor": {"type": "string", "minLength": 1, "maxLength": 80},
+        "product": {"type": "string", "minLength": 1, "maxLength": 80},
+        "match": {"type": "object", "required": ["bucket"], "additionalProperties": False, "properties": {
+            "bucket": {"type": "string"},
+            "requires": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
+            "values": {"type": "object", "additionalProperties": {"type": "string"}, "maxProperties": 6}}}}},
     "split": {"type": "object", "additionalProperties": False, "properties": {
         "fields": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
         "presence": {"type": "array", "items": {"type": "string"}, "maxItems": 4}}},
@@ -221,6 +228,13 @@ def validate_rule(kind: str, body: Any) -> None:
                 err = transforms.check(st["fn"], st.get("args") or {})
                 if err:
                     raise RuleError(f"field {f['to']}: {err}")
+    if kind == "source":
+        err = rx.check(body["match"]["bucket"])
+        if err:
+            raise RuleError(f"match.bucket: {err}")
+        for k, p in (body["match"].get("values") or {}).items():
+            if rx.check(p):
+                raise RuleError(f"match.values.{k}: {rx.check(p)}")
     if kind == "split" and not (body.get("fields") or body.get("presence")):
         raise RuleError("a split rule needs `fields` and/or `presence`")
     if kind == "longtail":
@@ -355,6 +369,7 @@ class Snapshot:
         self.masks = sorted(by_kind.get("mask", []), key=lambda r: (-r["body"].get("priority", 0), r["rule_id"]))
         self.signs = sorted(by_kind.get("sign", []), key=lambda r: (-r["body"].get("priority", 0), r["rule_id"]))
         self.seed_parsers = [r for r in by_kind.get("parser", []) if r["body"].get("scope")]
+        self.source_rules = sorted(by_kind.get("source", []), key=lambda r: r["rule_id"])
         self.scoped_mappings = [r for r in by_kind.get("mapping", []) if r["body"].get("scope")]
         self._mask_cache: dict[tuple, list] = {}
         self._sign_cache: dict[tuple, dict] = {}

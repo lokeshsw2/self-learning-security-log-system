@@ -587,6 +587,23 @@ class Engine:
                 c[2] = repr(exc)[:300]
 
     # ------------------------------------------------------------ the batch
+    def source_match(self, body: dict, det: Detection, sg: signature.Signed) -> bool:
+        """Does a source rule's content test hold for this record?"""
+        from . import rx
+        m = body["match"]
+        if not rx.compile(m["bucket"]).search(det.bucket):
+            return False
+        fields = {**(sg.parsed or {}), **det.header}
+        if any(fields.get(k) in (None, "") for k in m.get("requires") or ()):
+            return False
+        return all(rx.compile(p).search(str(fields.get(k, ""))) for k, p in (m.get("values") or {}).items())
+
+    def name_source(self, src: dict, det: Detection, sg: signature.Signed) -> None:
+        for r in self.snap.source_rules:
+            if self.source_match(r["body"], det, sg):
+                src.update(vendor=r["body"]["vendor"], product=r["body"]["product"], source_rule=r["rule_id"])
+                return
+
     def _family_of(self, det: Detection, flat: dict):
         from .family import STRUCTURED, keyset
         if det.app or det.format not in STRUCTURED or not flat:
@@ -656,6 +673,8 @@ class Engine:
             if sg.family:
                 source = f"{source}#{sg.family}"
             src = self._source(source)
+            if src["lines"] == 0 and not src.get("vendor") and self.snap.source_rules:
+                self.name_source(src, det, sg)
             src["lines"] += 1
             self._dirty_sources.add(source)
             if src["quarantined"]:
@@ -794,6 +813,9 @@ class Engine:
         # explosion guard
         for key in list(self._dirty_sources):
             src = self.sources[key]
+            if not src.get("vendor") and src["lines"] >= s.group_threshold and not key.endswith("|directive") \
+                    and "|binary" not in key:
+                self._queue_ops.append(("enqueue", "needs-source", key, {"source": key, "lines": src["lines"]}))
             live = sum(1 for sg_ in self.source_sigs.get(key, ()) if not self.groups[sg_]["merged_into"])
             src["signatures"] = live
             src["history"].append([self.batch_no, src["lines"], live])

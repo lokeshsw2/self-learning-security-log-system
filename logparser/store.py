@@ -83,7 +83,8 @@ CREATE TABLE IF NOT EXISTS queue (
 CREATE TABLE IF NOT EXISTS sources (
   source TEXT PRIMARY KEY, lines INTEGER NOT NULL DEFAULT 0,
   signatures INTEGER NOT NULL DEFAULT 0, quarantined INTEGER NOT NULL DEFAULT 0,
-  reason TEXT, history TEXT NOT NULL DEFAULT '[]');
+  reason TEXT, history TEXT NOT NULL DEFAULT '[]',
+  vendor TEXT, product TEXT, source_rule TEXT);
 
 CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
@@ -118,6 +119,10 @@ class SqliteStore(Store):
         self.db.execute("PRAGMA synchronous=NORMAL")
         self.db.execute("PRAGMA busy_timeout=60000")
         self.db.executescript(SCHEMA)
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(sources)")}
+        for c in ("vendor", "product", "source_rule"):
+            if c not in cols:
+                self.db.execute(f"ALTER TABLE sources ADD COLUMN {c} TEXT")
 
     # ------------------------------------------------------------ transactions
     def begin(self) -> None:
@@ -333,16 +338,20 @@ class SqliteStore(Store):
             d = dict(r[0])
             d["history"] = json.loads(d["history"])
             return d
-        return {"source": source, "lines": 0, "signatures": 0, "quarantined": 0, "reason": None, "history": []}
+        return {"source": source, "lines": 0, "signatures": 0, "quarantined": 0, "reason": None, "history": [],
+                "vendor": None, "product": None, "source_rule": None}
 
     def sources(self) -> list[dict]:
         return [self.source(r["source"]) for r in self.q("SELECT source FROM sources ORDER BY source")]
 
     def put_source(self, s: dict) -> None:
-        self.x("INSERT INTO sources(source,lines,signatures,quarantined,reason,history) VALUES(?,?,?,?,?,?) "
+        self.x("INSERT INTO sources(source,lines,signatures,quarantined,reason,history,vendor,product,source_rule) "
+               "VALUES(?,?,?,?,?,?,?,?,?) "
                "ON CONFLICT(source) DO UPDATE SET lines=excluded.lines, signatures=excluded.signatures, "
-               "quarantined=excluded.quarantined, reason=excluded.reason, history=excluded.history",
-               (s["source"], s["lines"], s["signatures"], s["quarantined"], s.get("reason"), _j(s["history"][-200:])))
+               "quarantined=excluded.quarantined, reason=excluded.reason, history=excluded.history, "
+               "vendor=excluded.vendor, product=excluded.product, source_rule=excluded.source_rule",
+               (s["source"], s["lines"], s["signatures"], s["quarantined"], s.get("reason"), _j(s["history"][-200:]),
+                s.get("vendor"), s.get("product"), s.get("source_rule")))
 
     # ------------------------------------------------------------ audit
     def log_tool(self, agent: str, tool: str, target: str | None, ok: bool, detail: str = "",

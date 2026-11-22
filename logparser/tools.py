@@ -12,6 +12,7 @@ Command line (one JSON object in, one JSON object out):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import copy
 import json
 import os
@@ -647,6 +648,86 @@ class Tools:
                 "pieces": [{"group": k["signature"], "key": k["detail"]["split_key"], "lines": k["count"]} for k in kids],
                 "note": "each piece is now its own group in needs-mapping"}
 
+    # ------------------------------------------------------------ naming sources (from content)
+    def _source_rows(self, key: str, n: int = 40) -> list:
+        rows = [r for r in self.store.raw_by_source(key) if r["raw"]]
+        step = max(1, len(rows) // n)
+        out = []
+        for r in rows[::step][:n]:
+            det, _, cols = self.e.analyse(self._rec(r))
+            out.append((r, det, self.e._sign(det, det and self._rec(r).label, cols)))
+        return out
+
+    def test_source(self, source: str, body: dict) -> dict:
+        """Which stored source keys a source rule claims, checked line by line."""
+        try:
+            registry.validate_rule("source", body)
+        except registry.RuleError as exc:
+            return {"ok": False, "error": str(exc)}
+        claimed, partial, conflicts = [], [], []
+        for s in self.store.sources():
+            key = s["source"]
+            if key.endswith("|directive") or "|binary" in key or not s["lines"]:
+                continue
+            rows = self._source_rows(key)
+            if not rows:
+                continue
+            hit = sum(self.e.source_match(body, det, sg) for _, det, sg in rows)
+            if not hit:
+                continue
+            entry = {"source": key, "lines": s["lines"], "matched": f"{hit}/{len(rows)}"}
+            if hit < len(rows):
+                bad = next(r for r, det, sg in rows if not self.e.source_match(body, det, sg))
+                entry["example_not_matched"] = _clip(bad["raw"])[:300]
+                partial.append(entry)
+                continue
+            if s.get("vendor") and (s["vendor"], s["product"]) != (body["vendor"], body["product"]):
+                conflicts.append({**entry, "already": f"{s['vendor']} / {s['product']}"})
+            claimed.append(entry)
+        res = {"ok": True, "notice": NOTICE, "claims": claimed, "partial": partial, "conflicts": conflicts,
+               "claims_this_source": any(c["source"] == source for c in claimed),
+               "would_pass_gate": bool(claimed) and not partial and not conflicts
+                                  and any(c["source"] == source for c in claimed)}
+        self._log("test_source", source, True, f"{len(claimed)} claimed, {len(partial)} partial")
+        return res
+
+    def save_source(self, source: str, body: dict, note: str = "", also: list | None = None) -> dict:
+        """`also`: the other source keys the rule is meant to name. A rule that claims any
+        source not listed is refused, so a loose test cannot name other products by accident."""
+        t = self.test_source(source, body)
+        if not t.get("ok"):
+            raise Refused(t["error"])
+        if not t["claims_this_source"]:
+            raise Refused("the rule does not match every sampled line of this source")
+        if t["partial"]:
+            raise Refused(f"the rule matches only some lines of other sources, so it is too loose or those sources "
+                          f"mix vendors: {json.dumps(t['partial'][:3])[:900]}")
+        extra = [c["source"] for c in t["claims"] if c["source"] != source and c["source"] not in (also or [])]
+        if extra:
+            raise Refused(f"the rule also claims sources you did not list with --also: {extra[:8]}. Tighten it, "
+                          f"or list them if they really are the same product")
+        if t["conflicts"]:
+            raise Refused(f"these sources already carry a different name: {json.dumps(t['conflicts'][:3])[:600]}")
+        tag = hashlib.blake2b(json.dumps(body["match"], sort_keys=True).encode(), digest_size=4).hexdigest()
+        rule_id = f"source:{_slug(body['vendor'])}-{_slug(body['product'])}-{tag}"
+        v = registry.save_rule(self.store, rule_id, body, {"created_by": self.agent, "note": note,
+                                                          "check": f"claims {len(t['claims'])} sources, every sampled line"})
+        self.e.reload()
+        named = []
+        for c in t["claims"]:
+            src = self.e._source(c["source"])
+            src.update(vendor=body["vendor"], product=body["product"], source_rule=rule_id)
+            self.store.put_source(src)
+            self.store.queue_done("needs-source", c["source"])
+            for gid in self.e.source_sigs.get(c["source"], ()):
+                g = self.e.groups.get(gid)
+                if g and not g["labels"].get("vendor"):
+                    g["labels"] = {**g["labels"], "vendor": body["vendor"], "product": body["product"]}
+                    self.store.upsert_group(g)
+            named.append(c["source"])
+        self._log("save_source", source, True, f"{rule_id}: {len(named)} sources")
+        return {"saved": rule_id, "version": v, "named": named}
+
     # ------------------------------------------------------------ grouping repair (agent 1)
     def get_stats(self, group: str) -> dict:
         """Per-field counters of a group and what code makes of them."""
@@ -815,6 +896,7 @@ def main(argv=None) -> None:
     ap.add_argument("--bucket")
     ap.add_argument("--base")
     ap.add_argument("--to", help="report-problem: needs-parser or needs-mapping")
+    ap.add_argument("--also", action="append", help="save-source: another source key the rule is meant to name")
     ap.add_argument("--file", help="JSON file with the rule body / event / fields")
     ap.add_argument("--json", help="inline JSON instead of --file")
     ap.add_argument("--labels", help='JSON, e.g. {"vendor":"Cisco","product":"ASA","event_type":"connection built"}')
@@ -855,6 +937,10 @@ def main(argv=None) -> None:
             out = t.test_split(a.group, body)
         elif tool == "save_split":
             out = t.save_split(a.group, body, a.note)
+        elif tool == "test_source":
+            out = t.test_source(a.source, body)
+        elif tool == "save_source":
+            out = t.save_source(a.source, body, a.note, a.also)
         elif tool == "get_stats":
             out = t.get_stats(a.group)
         elif tool == "get_decisions":
