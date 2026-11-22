@@ -1,0 +1,48 @@
+{
+ "kafka": {
+  "bootstrap": "kafka-1.gra.internal:9093,kafka-2.gra.internal:9093",
+  "unparsed_topic": "logs.unparsed",
+  "parsed_topic": "logs.parsed",
+  "replay_topic": "logs.replay",
+  "failed_topic": "logs.ls_failed",
+  "group_id": "lp-learner",
+  "logstash_group": "lp-logstash",
+  "create_topics": false,
+  "batch_max": 2000,
+  "idle_flush_s": 60,
+  "extra": {
+   "security.protocol": "SASL_SSL",
+   "sasl.mechanism": "SCRAM-SHA-512",
+   "sasl.username": "lp-learner",
+   "sasl.password": "${KAFKA_PASSWORD}"
+  },
+  "logstash_extra": {
+   "security_protocol": "SASL_SSL",
+   "sasl_mechanism": "SCRAM-SHA-512",
+   "sasl_jaas_config": "${KAFKA_JAAS_CONFIG}"
+  }
+ },
+ "store": {"url": "mysql://lp_learner:${MYSQL_PASSWORD}@mysql.gra.internal:3306/logparser"},
+ "engine_settings": "config/production.json",
+ "learning": {
+  "enabled": false,
+  "interval_s": 3600,
+  "model": "claude-sonnet-5-5",
+  "roles": "all",
+  "limit": 20,
+  "fix_rounds": 1,
+  "budget_usd_per_cycle": 1.0,
+  "budget_usd_per_day": 5.0
+ },
+ "logstash": {
+  "variant": "direct",
+  "config_dir": "/var/lib/logparser/logstash",
+  "deploy": true,
+  "verify_per_group": 8,
+  "verify_max_iter": 3,
+  "workers": 2,
+  "heap": "2g",
+  "base_fallback": false
+ },
+ "clickhouse": {"url": "http://clickhouse.gra.internal:8123", "database": "logs", "ingest": true}
+}
