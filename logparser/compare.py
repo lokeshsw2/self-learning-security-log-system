@@ -69,6 +69,32 @@ def _leaves(ev, prefix=""):
     return n
 
 
+def line_fields(e, det, sg, raw: str) -> dict:
+    """The line's own fields, as the engine reads them: the same input to the time and outcome checks of
+    both variants (a check that only saw the syslog header would miss a JSON line's EventTime)."""
+    g = e.canonical(sg.signature)
+    if not g or not g["parser_rule"]:
+        return {}
+    try:
+        res = e.parse_record(g, det, sg, Record("cmp", 0, text=raw))
+    except Exception:
+        return {}
+    return {k: v for k, v in (res.get("fields") or {}).items() if isinstance(v, str)}
+
+
+def common(det, raw: str, ev: dict, fields: dict, now_ms: int) -> list:
+    """Checks both variants get alike: the event time must come from the line when the line has one, and
+    words such as denied / failed must agree with the event's outcome."""
+    from . import checks
+    probs = []
+    t = ev.get("time")
+    ingest = isinstance(t, (int, float)) and (abs(t - now_ms) < 1000 or abs(t - time.time() * 1000) < 86400000)
+    if ingest and (checks._DATEISH.search(raw) or det.header.get("@timestamp")):
+        probs.append("time: the event got the ingest time, but the line has a timestamp")
+    probs += [p for p in checks.problems(det, fields, ev, [], {}) if not p.startswith("time: the event got")]
+    return probs
+
+
 def judge_a(e, det, raw: str, ev: dict, gid: str, now_ms: int) -> list:
     """Variant A event, the same checks as Variant B gets (schema, values in the line, time, outcome)."""
     from . import audit, checks
@@ -80,8 +106,6 @@ def judge_a(e, det, raw: str, ev: dict, gid: str, now_ms: int) -> list:
         if v in consts or re.sub(r"\[\d+\]", "", p) in derived or audit._present(v, raw):
             continue
         probs.append(f"value: event `{p}` = {v!r} is not in this line")
-    tags = ["time_from_ingest"] if ev.get("time") == now_ms else []
-    probs += checks.problems(det, {}, ev, tags, mapping or {})
     return probs
 
 
@@ -137,6 +161,8 @@ def run(store_a: str, store_b: str, lines: list, work: str, settings: str = "con
                                  "excluded_causes": dict(list(causes.items())[:10]), "timing": timing}
     # per line: which group the line belongs to (both stores share signatures), and each variant's verdict
     per_fmt: dict = collections.defaultdict(lambda: collections.Counter())
+    per_group: dict = {}
+    per_group_diff: dict = {}
     agree = collections.Counter()
     disagreements: list = []
     examples: dict = {"A": [], "B": []}
@@ -146,6 +172,7 @@ def run(store_a: str, store_b: str, lines: list, work: str, settings: str = "con
         sg = ea._sign(det, None, cols)
         cg = ea.canonical(sg.signature)
         gid = cg["signature"] if cg else None
+        fields = line_fields(ea, det, sg, raw) if any(events[n].get(i) for n in events) else {}
         fmt = (cg or {}).get("format") or "new"
         got = {}
         for name, judge, eng in (("A", judge_a, ea), ("B", judge_b, eb)):
@@ -154,11 +181,14 @@ def run(store_a: str, store_b: str, lines: list, work: str, settings: str = "con
             if not g or "lp_unparsed" in (ev.get("tags") or []):
                 continue
             o = ev.get("ocsf") or {}
-            probs = judge(eng, det, raw, o, g, now_ms)
+            probs = judge(eng, det, raw, o, g, now_ms) + common(det, raw, o, fields, now_ms)
             per_fmt[fmt][f"{name}_parsed"] += 1
             per_fmt[fmt][f"{name}_correct"] += 0 if probs else 1
-            if probs and len(examples[name]) < 8:
-                examples[name].append({"group": g, "line": raw[:300], "problem": probs[0][:200]})
+            if probs:
+                bad = per_group.setdefault(g, collections.Counter())
+                bad[f"{name}:{probs[0].split(':', 1)[0]}"] += 1
+                if len(examples[name]) < 12 and not any(x["group"] == g for x in examples[name]):
+                    examples[name].append({"group": g, "line": raw[:300], "problem": probs[0][:200]})
             rich[name].append(_leaves(o))
             got[name] = o
         per_fmt[fmt]["lines"] += 1
@@ -171,6 +201,7 @@ def run(store_a: str, store_b: str, lines: list, work: str, settings: str = "con
             agree["same_key_fields" if not diff else "differ"] += 1
             for p in diff:
                 agree["differ:" + p] += 1
+                per_group_diff.setdefault(gid, collections.Counter())[p] += 1
             if diff and len(disagreements) < 12:
                 disagreements.append({"group": gid, "fields": {p: [_get(got["A"], tuple(p.split("."))),
                                                                   _get(got["B"], tuple(p.split(".")))] for p in diff},
@@ -188,6 +219,8 @@ def run(store_a: str, store_b: str, lines: list, work: str, settings: str = "con
         v["problems"] = examples[name]
     res["by_format"] = {f: dict(c) for f, c in sorted(per_fmt.items(), key=lambda kv: -kv[1]["lines"])}
     res["agreement"] = dict(agree)
+    res["problems_by_group"] = {g: dict(c) for g, c in per_group.items()}
+    res["disagreement_by_group"] = {g: dict(c) for g, c in per_group_diff.items()}
     res["disagreements"] = disagreements
     # cost of what each variant learned for its deployed groups
     ca = cost_per_group(ea.store, ("parser-gen", "ocsf-mapping"))
