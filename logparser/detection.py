@@ -45,13 +45,34 @@ QUEUE = "needs-detection"
 # a header worth reading starts with a time or a syslog priority: a year-first or day-first date
 # (any of - / . as separator), a syslog month and day, an epoch of ten to thirteen digits followed
 # by a separator, a time of day, <pri>, or a bracketed date
-HEADED = re.compile(r"^(?:<\d{1,3}>|\d{4}[-/.]\d\d[-/.]\d\d|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}[\sT,]|"
+HEADED = re.compile(r"^(?:<\d{1,3}>|\d{4}[-/.]\d\d[-/.]\d\d|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}[\sT,]\d{1,2}:\d\d|"
                     r"\d\d/[A-Za-z]{3}/\d{4}|\d{10,13}(?:\.\d+)?(?:[\s|,;]|$)|\d{1,2}:\d\d:\d\d|"
                     r"\[\d{1,4}[-/:.]|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s)")
 NEED_ONE_OF = {"timestamp", "host", "app"}
-TIME_CODES = set("YymdbBjHIpMSfz%")             # strptime codes a time_format may use
-# a zone written right after the time: an offset, UTC/GMT/Z, or a name such as IST, CET, CEST, AEST
-ZONE_AFTER = re.compile(r"^\s+(?:[+-]\d\d:?\d\d|UTC|GMT|Z|[A-Z]{1,3}T)\b")
+TIME_CODES = set("YmdbBjHIpMSfz%")              # strptime codes a time_format may use (no %y: century guessing)
+ZONE_NAMES = ("UTC GMT UT Z IST CET CEST EET EEST WET WEST BST MSK EST EDT CST CDT MST MDT PST PDT AKST AKDT HST "
+              "AST ADT NST NDT AEST AEDT ACST ACDT AWST NZST NZDT JST KST SGT HKT WIB WITA WIT PHT ICT SAST BRT "
+              "ART CLT COT PET UYT").split()
+# a zone written right after the time: an offset or Z (attached or not), or a real zone abbreviation
+ZONE_AFTER = re.compile(r"^(?:\s*(?:[+-]\d\d:?\d\d\b|Z\b)|\s+(?:" + "|".join(ZONE_NAMES) + r")\b)")
+PRI = re.compile(r"^<\d{1,3}>")
+YEAR_MS = 365 * 86400 * 1000
+
+
+def leads_with_time(line: str, ctx: dict) -> bool:
+    """Does the line start (after a syslog <pri>) with a time? An epoch counts only if it is a plausible
+    time near now, so "1234567890 order" does not."""
+    s = PRI.sub("", line.lstrip(), count=1)
+    if not HEADED.match(s) or s.startswith("<"):
+        return False
+    tok = re.split(r"[\s|,;]", s, maxsplit=1)[0]
+    if tok.isdigit():
+        try:
+            t = transforms.parse_timestamp(tok, {}, ctx)
+        except transforms.TransformError:
+            return False
+        return abs(t - ctx["now"] * 1000) < 10 * YEAR_MS
+    return True
 MAX_SAMPLES = 30
 
 
@@ -166,11 +187,19 @@ def check_rule(e, body: dict) -> None:
             raise DetectRefused("`time_format` describes the `timestamp` group, which the pattern does not have")
         codes = set(re.findall(r"%(.)", fmt))
         if not codes <= TIME_CODES or "H" not in codes and "I" not in codes or "M" not in codes:
-            raise DetectRefused("`time_format` is a strptime format using only %Y %y %m %d %b %B %j %H %I %p "
-                                "%M %S %f %z, with at least the hour and minute")
-        if codes & set("mdbBj") and not codes & set("Yy"):
-            raise DetectRefused("a `time_format` with a date needs the year (%Y or %y); for a date with no year, "
-                                "leave `time_format` out")
+            raise DetectRefused("`time_format` is a strptime format using only %Y %m %d %b %B %j %H %I %p %M %S "
+                                "%f %z, with at least the hour and minute (a two-digit year %y is not accepted)")
+        if "I" in codes and "p" not in codes:
+            raise DetectRefused("a 12-hour clock (%I) needs AM/PM (%p)")
+        if codes & set("mbB") and "d" not in codes:
+            raise DetectRefused("a month (%m %b %B) needs the day (%d)")
+        if "d" in codes and not codes & set("mbB"):
+            raise DetectRefused("a day (%d) needs the month (%m %b %B)")
+        if codes & set("mdbBj") and "Y" not in codes:
+            raise DetectRefused("a `time_format` with a date needs the four-digit year (%Y); for a date with no "
+                                "year, leave `time_format` out")
+        if "Y" in codes and not codes & set("mdbBj"):
+            raise DetectRefused("a year (%Y) needs the month and day (or %j)")
 
 
 def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
@@ -183,7 +212,7 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
     ctx = {"default_tz": e.deployment_tz(), "now": e._clock(), "tz_names": e.settings.tz_names}
     samples = item["samples"]
     groups = set(rx.compile(body["test"]["pattern"]).groupindex)
-    timed = [s for s in samples if HEADED.match(s.lstrip()) and not s.lstrip().startswith("<")]
+    timed = [s for s in samples if leads_with_time(s, ctx)]
     if timed and "timestamp" not in groups:
         raise DetectRefused(f"{len(timed)} of {len(samples)} sample lines start with a time, e.g. {timed[0][:60]!r}: "
                             "capture it as `timestamp`, and add `time_format` if the engine cannot read it as it "
@@ -202,10 +231,15 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
                     continue
             if ts is not None:
                 try:
-                    transforms.parse_timestamp(ts, {}, ctx)
+                    t_ms = transforms.parse_timestamp(ts, {}, dict(ctx))
                 except transforms.TransformError:
                     if len(target["bad_time"]) < 3:
                         target["bad_time"].append(ts)
+                    continue
+                if t_ms > ctx["now"] * 1000 + 86400 * 1000 or t_ms < ctx["now"] * 1000 - 20 * YEAR_MS:
+                    if len(target["bad_time"]) < 3:
+                        target["bad_time"].append(f"{raw_ts} (read as {t_ms}: more than a day in the future or "
+                                                  f"20 years in the past)")
                     continue
             target["read"] += 1
             if target["first"] is None:
@@ -226,7 +260,10 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
         regress += 1
         if len(examples) < 4:
             examples.append({"line": s[:240], "before": old.bucket, "after": new.bucket})
-    ok = target["read"] == target["lines"] and target["lines"] > 0 and regress == 0
+    ambiguous = _day_month_ambiguous(body, samples)
+    if ambiguous:
+        target["ambiguous"] = ambiguous
+    ok = target["read"] == target["lines"] and target["lines"] > 0 and regress == 0 and not ambiguous
     # what saving would cost: groups of this source whose learned parser will not fit once the
     # header is read (a parser was written for the whole line); long-tail rules are carried over
     relearn = {"groups_with_rules": 0, "lines": 0, "stored_events_with_a_class": 0}
@@ -246,6 +283,31 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
             "scope": f"only lines no other rule reads, whose first token has the shape {item['shape']!r}"}
 
 
+def _day_month_ambiguous(body: dict, samples: list) -> str | None:
+    """With %d and %m in the format, could every sample be read the other way round? Then the samples
+    cannot tell which is the day, and the rule could be wrong on every line."""
+    from .detect import normal_time
+    fmt = body.get("time_format") or ""
+    if "%d" not in fmt or "%m" not in fmt:
+        return None
+    swapped = fmt.replace("%d", "\0").replace("%m", "%d").replace("\0", "%m")
+    pat = rx.compile(body["test"]["pattern"])
+    differ = False
+    for s in samples:
+        m = pat.search(s)
+        raw = m.group("timestamp") if m and "timestamp" in pat.groupindex else None
+        if not raw:
+            continue
+        a, b = normal_time(raw, fmt), normal_time(raw, swapped)
+        if a is None:
+            continue
+        if b is None:
+            return None                   # some sample has a day above 12: the order is settled
+        differ = differ or a != b
+    return ("no sample has a day above 12, so day and month could be either way round; flag the item so a "
+            "human decides, or wait for more lines") if differ else None
+
+
 def apply(e, key: str, item: dict, body: dict, agent: str, note: str = "") -> dict:
     """Save a rule that passed `evaluate`, process the lines it now reads again, and carry the
     rules learned for the groups they leave over to their new groups."""
@@ -256,6 +318,8 @@ def apply(e, key: str, item: dict, body: dict, agent: str, note: str = "") -> di
         if t["read"] < t["lines"]:
             why.append(f"it reads {t['read']} of {t['lines']} sample lines; not read: {t['not_read'][:2]}"
                        + (f"; timestamps that do not parse: {t['bad_time']}" if t["bad_time"] else ""))
+        if t.get("ambiguous"):
+            why.append(t["ambiguous"])
         if res["regressions"]:
             why.append(f"it changes how {res['regressions']} lines that other rules read today are read, e.g. "
                        f"{res['regression_examples'][:2]}")

@@ -40,6 +40,7 @@ def _clean_app(app: str) -> str:
 
 
 _DATE_CODES = ("%d", "%m", "%b", "%B", "%j")
+_TOD_RAW = re.compile(r"^\d{1,2}:\d\d:\d\d(?:[.,]\d+)?$")    # a header time with no date
 
 
 def normal_time(raw: str, fmt: str) -> str | None:
@@ -50,7 +51,7 @@ def normal_time(raw: str, fmt: str) -> str | None:
         d = _dt.datetime.strptime(raw, fmt)
     except ValueError:
         return None
-    out = d.strftime("%Y-%m-%dT%H:%M:%S" if any(c in fmt for c in _DATE_CODES) else "%H:%M:%S")
+    out = d.strftime("%Y-%m-%dT%H:%M:%S" if any(c in fmt for c in _DATE_CODES) else "T%H:%M:%S")
     if d.microsecond:
         out += f".{d.microsecond:06d}"
     if d.tzinfo is not None:
@@ -126,10 +127,15 @@ def shape(line: str) -> str:
     In a header with no spaces ("1795322103123|edge-fw-02|vpnd|...") only the first field counts, with
     its delimiter, so a varying host or program name does not split one format into several shapes."""
     tok = line.lstrip().split(" ", 1)[0][:48]
-    cut = min((i for i in (tok.find("|"), tok.find(";")) if i >= 0), default=-1)
+    cut = tok.find("|")
     if cut >= 0:
         tok = tok[:cut + 1]
     return re.sub(r"[A-Za-z]+", "a", re.sub(r"\d+", "0", tok))
+
+
+def _old_shape(line: str) -> str:
+    """The shape before headers with no spaces were cut at "|": rules saved then still match."""
+    return re.sub(r"[A-Za-z]+", "a", re.sub(r"\d+", "0", line.lstrip().split(" ", 1)[0][:48]))
 
 
 def detect(snap: Snapshot, text: str) -> Detection:
@@ -141,7 +147,7 @@ def detect(snap: Snapshot, text: str) -> Detection:
                 continue
             if chk.get("when_shape"):                # and only for the line shape they were written for
                 sh = sh or shape(text)
-                if sh not in chk["when_shape"]:
+                if sh not in chk["when_shape"] and _old_shape(text) not in chk["when_shape"]:
                     continue
             ok, caps, _ = _test(chk["test"], text, snap)
             if ok and caps is not None and caps.get("payload") is not None:
@@ -167,6 +173,8 @@ def _detect(snap: Snapshot, text: str, used: set, skip_ai: bool, first: dict | N
                 norm = normal_time(caps["timestamp"], chk["time_format"])
                 if norm is not None:
                     caps["timestamp_raw"], caps["timestamp"] = caps["timestamp"], norm
+            elif caps.get("timestamp") and _TOD_RAW.match(caps["timestamp"]):
+                caps["timestamp_raw"], caps["timestamp"] = caps["timestamp"], "T" + caps["timestamp"]
             if caps.get("timestamp") and caps.get("tz"):          # a zone written next to the time travels with it
                 caps["timestamp"] = f"{caps['timestamp']} {caps['tz']}"
             payload = caps.pop("payload", None)

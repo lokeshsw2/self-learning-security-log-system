@@ -766,6 +766,10 @@ class Compiler:
 
     # ---------------------------------------------------------- distributor filter
     def distributor_filter(self, routes: dict, roots: list) -> str:
+        added = [c["name"] for c in self.snap.detect if c["name"].startswith("ai_")]
+        if added:
+            raise Unsupported(f"detection rules added by the agent ({', '.join(added[:5])}) are fallbacks scoped "
+                              f"by line shape, with time_format/tz; the Logstash export does not reproduce that")
         snap = self.snap
         tbl = self.tables("distributor", roots)
         T = "T_dist"

@@ -677,8 +677,9 @@ class Tools:
         if mapping is not None:
             bad, good = [], []
             for raw, f, det in rows:
-                ev, problems, _ = ocsf.map_event(self.e.schema, mapping, f, {"now": self.e._clock(),
-                                                 "default_tz": self.e.settings.default_tz, "labels": g["labels"]})
+                ev, problems, _ = ocsf.map_event(self.e.schema, mapping, f, {
+                    "now": self.e._clock(), "default_tz": self.e.deployment_tz(), "labels": g["labels"],
+                    "tz_names": self.e.settings.tz_names})
                 (bad if (self.e.schema.validate(ev)[0] or problems) else good).append(f)
             sugg = []
             if bad and good:

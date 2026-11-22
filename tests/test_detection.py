@@ -34,8 +34,12 @@ BROAD = {"name": "ai_anything", "order": 1, "type": "envelope", "app": [], "test
 SHAPE = "0-0-0a0:0:0.0+0:0"
 
 
+LATER = 1795400000.0    # 2026-11-23: the engine clock after every line in these tests (the default test clock is 2026-01-01)
+
+
 def setup(tmp_path, n_odd=25, extra=()):
     eng = make(tmp_path, group_threshold=50)
+    eng.now = LATER
     feed(eng, tmp_path, [read_ok(i) for i in range(30)] + [odd(i) for i in range(n_odd)] + list(extra))
     return eng
 
@@ -55,6 +59,7 @@ def test_scan_queues_unread_headed_lines_only(tmp_path):
 
 def test_scan_ignores_few_headerless_or_digit_first_lines(tmp_path):
     eng = make(tmp_path, group_threshold=50)
+    eng.now = LATER
     feed(eng, tmp_path, [odd(i) for i in range(5)] + [f"free text line number {i} without a header" for i in range(40)]
          + [vpc(i) for i in range(40)])
     assert detection.scan(eng)["queued"] == 0
@@ -206,6 +211,7 @@ HOST_APP = r"(?P<host>[A-Za-z0-9][A-Za-z0-9._\-]*) (?P<app>[^\s:\[\]]+)(?:\[(?P<
 
 def queued(tmp_path, lines, **settings):
     eng = make(tmp_path, group_threshold=50, **settings)
+    eng.now = LATER
     feed(eng, tmp_path, lines)
     detection.scan(eng)
     return eng, eng.store.queue_items(detection.QUEUE)
@@ -233,8 +239,10 @@ def test_time_format_reads_a_day_first_date(tmp_path):
     assert det.chain[0] == "ai_eu" and det.header["@timestamp"] == "2026-11-22T10:17:33.077000"
 
 
-@pytest.mark.parametrize("fmt,why", [("%d.%m %H:%M", "needs the year"), ("%d.%m.%Y %H:%M:%S %Z", "strptime format"),
-                                     ("%d.%m.%Y", "hour and minute")])
+@pytest.mark.parametrize("fmt,why", [
+    ("%d.%m %H:%M", "four-digit year"), ("%d.%m.%Y %H:%M:%S %Z", "strptime format"), ("%d.%m.%Y", "hour and minute"),
+    ("%d.%m.%y %H:%M", "strptime format"), ("%m/%d/%Y %I:%M", "AM/PM"), ("%Y %b %H:%M", "needs the day"),
+    ("%Y %H:%M", "month and day"), ("%d %Y %H:%M", "needs the month")])
 def test_time_format_is_checked(tmp_path, fmt, why):
     eng = setup(tmp_path)
     rule = {**GOOD, "time_format": fmt}
@@ -265,7 +273,10 @@ def test_time_of_day_gets_the_arrival_date(tmp_path):
             "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d\d:\d\d:\d\d(?:\.\d+)?) " + HOST_APP}}
     assert detection.evaluate(eng, items[0]["payload"], rule)["ok"]
     ctx = {"default_tz": "UTC", "now": 1795342000}
-    assert transforms.parse_timestamp("08:05:00", {}, ctx) == 1795334700000 and "date_assumed" in ctx["flags"]
+    assert transforms.parse_timestamp("T08:05:00", {}, ctx) == 1795334700000 and "date_assumed" in ctx["flags"]
+    assert detect(eng.snap, tod(1)).chain == ["unstructured"]          # no rule saved yet: unread
+    with pytest.raises(transforms.TransformError):                     # an unmarked 01:30:00 may be a duration
+        transforms.parse_timestamp("01:30:00", {}, ctx)
 
 
 def test_pipe_header_is_one_shape_whatever_the_program(tmp_path):
@@ -279,3 +290,78 @@ def test_audit_sees_day_first_dates_and_times_of_day():
     det = types.SimpleNamespace(header={})
     for text in ("22.11.2026 10:05:33,293 mx2 postfix", "10:09:52.516 lb-03 keepalived: up"):
         assert checks.problems(det, {"_text": text}, {"time": 1}, ["time_from_ingest"], {})
+
+
+# --------------------------------------------------------------------- review 3 findings
+def us(i, day=None):     # month/day order: with every day <= 12 the samples cannot tell
+    return f"{(day or (i % 12) + 1):02d}/11/2026 10:{i % 60:02d}:00 hostx app[{i}]: event {i}"
+
+
+def mdy_rule(fmt):
+    return {"name": "ai_mdy", "order": 50, "type": "envelope", "app": ["app"], "time_format": fmt,
+            "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d\d/\d\d/\d{4} \d\d:\d\d:\d\d) " + HOST_APP}}
+
+
+def test_day_month_order_must_be_settled_by_the_samples(tmp_path):
+    eng, items = queued(tmp_path, [us(i) for i in range(25)])
+    res = detection.evaluate(eng, items[0]["payload"], mdy_rule("%d/%m/%Y %H:%M:%S"))
+    assert not res["ok"] and "either way round" in res["target"]["ambiguous"]
+    item = {**items[0]["payload"], "samples": items[0]["payload"]["samples"] + [us(99, day=23)]}
+    assert detection.evaluate(eng, item, mdy_rule("%d/%m/%Y %H:%M:%S"))["ok"]       # day 23: settled
+
+
+def test_a_time_in_the_future_is_refused(tmp_path):
+    eng, items = queued(tmp_path, [eu(i) for i in range(25)])
+    rule = {"name": "ai_eu", "order": 50, "type": "envelope", "app": ["app"], "time_format": "%m.%d.%Y %H:%M:%S,%f",
+            "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d\d\.\d\d\.\d{4} \d\d:\d\d:\d\d,\d+) " + HOST_APP}}
+    res = detection.evaluate(eng, items[0]["payload"], rule)       # month 22 does not exist: nothing reads
+    assert not res["ok"]
+    eng.now = 1767225600.0                                         # clock before the lines: they are "future"
+    good = {**rule, "time_format": "%d.%m.%Y %H:%M:%S,%f"}
+    res = detection.evaluate(eng, items[0]["payload"], good)
+    assert not res["ok"] and "future" in res["target"]["bad_time"][0]
+
+
+def test_zone_check_ignores_words_and_sees_attached_offsets():
+    for after, zone in ((" GET /x", False), (" CRIT disk", False), (" TEST run", False), (" IST db-01", True),
+                        ("+0530 host", True), ("Z host", True), (" +05:30 h", True), (" MSK h", True), (" host", False)):
+        assert bool(detection.ZONE_AFTER.match(after)) is zone, after
+
+
+def test_priority_prefix_and_plausible_epochs_in_the_time_guard():
+    ctx = {"now": LATER, "default_tz": "UTC"}
+    assert detection.leads_with_time("<34>2026-11-22T10:15:03Z host app: x", ctx)
+    assert not detection.leads_with_time("1234567890 order shipped", ctx)        # 2009: not near now
+    assert detection.leads_with_time("1795322103123|edge|vpnd|x", ctx)
+    assert not detection.leads_with_time("2.1.15 started", ctx)
+
+
+def test_rules_saved_with_the_old_shape_still_apply(tmp_path):
+    eng = setup(tmp_path)
+    body = {"name": "ai_pipe", "order": 50, "type": "envelope", "app": ["app"], "when_shape": ["0|a-a-0|a|a"],
+            "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d{13})\|(?P<host>[\w-]+)\|(?P<app>\w+)\|(?P<payload>.*)$"}}
+    registry.save_rule(eng.store, "detect:ai_pipe", body, {"created_by": "harness:detection"})
+    eng.reload()
+    assert detect(eng.snap, "1795322103123|edge-fw-02|vpnd|x").chain[0] == "ai_pipe"
+
+
+def test_zone_database_names_work_again_and_durations_are_not_flagged():
+    import types
+    from logparser import checks, transforms
+    assert transforms.parse_timestamp("2026-11-22 10:00:00", {"tz": "CET"}, {}) == 1795338000000
+    with pytest.raises(transforms.TransformError, match="human decides"):
+        transforms.parse_timestamp("2026-11-22 10:00:00 IST", {}, {})          # not a zone-database name
+    det = types.SimpleNamespace(header={})
+    assert not checks.problems(det, {"duration": "01:30:00"}, {"time": 1}, ["time_from_ingest"], {})
+
+
+def test_export_refuses_agent_detection_rules(tmp_path):
+    from logparser import logstash
+    eng = setup(tmp_path)
+    registry.save_rule(eng.store, "detect:ai_x", {**GOOD, "name": "ai_x"}, {"created_by": "harness:detection"})
+    eng.reload()
+    comp = logstash.Compiler(eng) if hasattr(logstash, "Compiler") else None
+    if comp is None:
+        pytest.skip("no compiler class")
+    with pytest.raises(logstash.Unsupported, match="added by the agent"):
+        comp.distributor_filter({}, [])
