@@ -14,9 +14,21 @@ system (broker, topics, database, ClickHouse, Logstash paths, budgets) lives her
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field
+
+_ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+SECRET_KEYS = re.compile(r"pass|secret|token|key|sasl\.jaas", re.I)
+
+
+def _env(value):
+    """"${NAME}" in a config string is replaced by the environment variable NAME (secrets stay out of files)."""
+    if isinstance(value, str):
+        return _ENV.sub(lambda m: os.environ.get(m.group(1), ""), value)
+    return value
 
 
 @dataclass
@@ -29,7 +41,11 @@ class KafkaConfig:
     poll_timeout_s: float = 1.0
     create_topics: bool = False          # local testing only; production topics are managed elsewhere
     partitions: int = 4
-    extra: dict = field(default_factory=dict)   # passed to the client as is (security, SASL, ...)
+    idle_flush_s: float = 60.0            # quiet this long: small groups still without a rule go to the long tail
+    extra: dict = field(default_factory=dict)   # client settings (security, SASL...); "${ENV}" values allowed
+
+    def client_extra(self) -> dict:
+        return {k: _env(v) for k, v in self.extra.items()}
 
 
 @dataclass
@@ -87,7 +103,32 @@ class ServiceConfig:
                 raise ValueError(f"unknown setting: {k}")
         if cfg.logstash.variant not in ("compiled", "direct"):
             raise ValueError("logstash.variant must be 'compiled' or 'direct'")
+        cfg.validate()
         return cfg
+
+    def validate(self) -> None:
+        from ..harness import ORDER
+        lc = self.learning
+        if lc.roles != "all":
+            bad = [r for r in lc.roles if r not in ORDER + ["longtail"]]
+            if bad:
+                raise ValueError(f"learning.roles: unknown roles {bad}; known: {ORDER + ['longtail']}")
+        if lc.interval_s <= 0 or lc.limit <= 0 or lc.fix_rounds < 0:
+            raise ValueError("learning.interval_s and learning.limit must be positive, fix_rounds >= 0")
+        if lc.budget_usd_per_cycle < 0 or lc.budget_usd_per_day < 0:
+            raise ValueError("learning budgets cannot be negative")
+        if self.kafka.batch_max <= 0 or self.kafka.idle_flush_s < 0:
+            raise ValueError("kafka.batch_max must be positive and idle_flush_s >= 0")
+        unknown = set(self.store) - {"url"}
+        if unknown:
+            raise ValueError(f"unknown store settings: {sorted(unknown)}")
+
+    def redacted(self) -> dict:
+        """The configuration with secret-looking client settings hidden (for status pages and logs)."""
+        d = copy.deepcopy(asdict(self))
+        d["kafka"]["extra"] = {k: ("***" if SECRET_KEYS.search(k) else v) for k, v in d["kafka"]["extra"].items()}
+        d["store"] = {"url": re.sub(r"//([^:/@]+):[^@]+@", r"//\1:***@", d["store"].get("url", ""))}
+        return d
 
     def sqlite_path(self) -> str:
         url = self.store.get("url", "")

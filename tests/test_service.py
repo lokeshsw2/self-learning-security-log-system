@@ -18,14 +18,20 @@ class FakeConsumer:
 
     def __init__(self, lines, batch=10, topic="logs.unparsed"):
         self.msgs = [(topic, i % 2, i // 2, l.encode() if isinstance(l, str) else l, {}) for i, l in enumerate(lines)]
-        self.batch, self.commits, self.fail_next = batch, 0, False
+        self.batch, self.commits, self.committed, self.fail_commit = batch, 0, {}, False
 
     def poll(self, max_messages):
         out, self.msgs = self.msgs[:min(self.batch, max_messages)], self.msgs[min(self.batch, max_messages):]
         return out
 
-    def commit(self):
+    def commit(self, offsets):
+        if self.fail_commit:
+            raise RuntimeError("rebalance in progress")
         self.commits += 1
+        self.committed.update(offsets)
+
+    def redeliver(self, msgs):
+        self.msgs = list(msgs) + self.msgs
 
 
 class NoModel:
@@ -47,6 +53,7 @@ def config(tmp_path, **learning):
     cfg = ServiceConfig()
     cfg.store = {"url": f"sqlite:///{tmp_path}/svc.db"}
     cfg.engine_settings = None
+    cfg.kafka.idle_flush_s = 0
     for k, v in learning.items():
         setattr(cfg.learning, k, v)
     return cfg
@@ -140,3 +147,112 @@ def test_sqlite_only_sql_does_not_spread():
                                                      or ".q(" in line or ".x(" in line or "json_set" in line):
                         hits.append(f"{f}:{n}")
     assert len(hits) <= BASELINE, f"new SQLite-only SQL outside store.py: {hits}"
+
+
+# --------------------------------------------------------------------- review findings
+def test_redelivered_messages_are_skipped_not_counted_twice(tmp_path):
+    cons = FakeConsumer(SSH, batch=100)
+    svc = LearnerService(config(tmp_path), consumer=cons)
+    first = list(cons.msgs)
+    svc.step()
+    raw = svc.eng.store.q("SELECT COUNT(*) n FROM raw")[0]["n"]
+    cons.redeliver(first)                       # a crash before the commit, or a rebalance
+    svc.step()
+    assert svc.stats["duplicates_skipped"] == len(SSH)
+    assert svc.eng.store.q("SELECT COUNT(*) n FROM raw")[0]["n"] == raw
+    assert sum(g["count"] for g in svc.eng.groups.values() if not g["merged_into"]) == len(SSH)
+    assert cons.committed[("logs.unparsed", 0)] == (len(SSH) + 1) // 2      # exact next offsets
+
+
+def test_a_failed_commit_does_not_stop_the_service(tmp_path):
+    cons = FakeConsumer(SSH, batch=4)
+    cons.fail_commit = True
+    svc = LearnerService(config(tmp_path), consumer=cons)
+    svc.run(idle_exit_s=0)
+    assert svc.stats["commit_errors"] >= 2 and svc.stats["records"] == len(SSH)
+
+
+def test_empty_and_oversized_messages(tmp_path):
+    big = "x" * 70000
+    svc = LearnerService(config(tmp_path), consumer=FakeConsumer([b"", b"   ", SSH[0], big]))
+    svc.run(idle_exit_s=0)
+    assert svc.stats["empty_skipped"] == 2 and svc.stats["truncated"] == 1
+    assert max(len(r["raw"]) for r in svc.eng.store.q("SELECT raw FROM raw")) <= svc.eng.settings.max_line_len
+
+
+class FailingModel:
+    def __init__(self):
+        import types
+        self.messages = types.SimpleNamespace(create=self._fail)
+        self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=self._fail))
+
+    def _fail(self, **kw):
+        raise ConnectionError("API unreachable")
+
+
+def test_a_failing_cycle_is_recorded_and_backs_off(tmp_path):
+    from tests.test_engine import PG, PG2
+    clock = Clock()
+    cfg = config(tmp_path, enabled=True, roles=["longtail"], interval_s=100)
+    svc = LearnerService(cfg, consumer=FakeConsumer([PG, PG2]), model_client=FailingModel(), clock=clock)
+    svc.run(idle_exit_s=0)                                  # the cycle fails; the service keeps going
+    hist = svc.eng.store.get_state("learn_history")
+    assert hist[-1]["error"].startswith("ConnectionError") and svc.stats["learn_errors"] == 1
+    assert svc.eng.store.get_state("learn_last") == clock.t
+    clock.t += 150                                          # past the interval, but backing off (2 x 100 s)
+    assert svc.learning_due() == "interval not reached"
+    clock.t += 100
+    assert svc.learning_due() is None
+
+
+def test_learning_runs_beside_intake(tmp_path):
+    import threading
+    from tests.test_engine import PG, PG2
+    gate = threading.Event()
+
+    class SlowModel(FakeLongtail):
+        def _create(self, **kw):
+            gate.wait(5)                                    # the cycle waits until more lines arrived
+            return super()._create(**kw)
+
+    cons = FakeConsumer([PG, PG2], batch=10)
+    cfg = config(tmp_path, enabled=True, roles=["longtail"])
+    svc = LearnerService(cfg, consumer=cons, model_client=SlowModel({"fields": {}, "summary": "Connection received."}))
+    svc.step()
+    svc.idle_since = svc.clock() - 1
+    svc.idle_flush()
+    assert svc.learning_due() is None
+    svc.start_learning()
+    cons.redeliver([("logs.unparsed", 5, 0, SSH[0].encode(), {})])
+    svc.step()                                              # intake continues while the cycle runs
+    assert svc.learner.is_alive() and svc.stats["records"] == 3
+    gate.set()
+    svc.learner.join(10)
+    assert svc.eng.store.get_state("learn_history")[-1]["spent_usd"] > 0
+
+
+def test_budget_stops_before_an_item_it_probably_cannot_afford():
+    import types
+    from logparser.harness import Harness
+    h = Harness.__new__(Harness)
+    h.budget_usd, h.spent_usd, h.item_costs, h.stop = 0.50, 0.42, [0.10, 0.12], None
+    assert h.over_budget()                                  # 0.42 + 0.11 average > 0.50
+    h.spent_usd = 0.30
+    assert not h.over_budget()
+
+
+def test_config_secrets_and_validation(tmp_path, monkeypatch):
+    monkeypatch.setenv("KAFKA_PASSWORD", "s3cret")
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"kafka": {"extra": {"sasl.password": "${KAFKA_PASSWORD}", "security.protocol": "SASL_SSL"}},
+                             "store": {"url": "sqlite:///x.db"}}))
+    cfg = ServiceConfig.load(str(p))
+    assert cfg.kafka.client_extra()["sasl.password"] == "s3cret"
+    assert cfg.redacted()["kafka"]["extra"] == {"sasl.password": "***", "security.protocol": "SASL_SSL"}
+    assert "s3cret" not in json.dumps(cfg.redacted())
+    p.write_text(json.dumps({"learning": {"roles": ["parser-gen", "magic"]}}))
+    with pytest.raises(ValueError, match="unknown roles"):
+        ServiceConfig.load(str(p))
+    p.write_text(json.dumps({"learning": {"interval_s": 0}}))
+    with pytest.raises(ValueError, match="positive"):
+        ServiceConfig.load(str(p))

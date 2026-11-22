@@ -5,6 +5,7 @@
 """
 import argparse
 import json
+import logging
 
 from ..envfile import load_env
 from .config import ServiceConfig
@@ -24,7 +25,9 @@ def main() -> None:
         made = ensure_topics(cfg)
         if made:
             print("created topics:", made, flush=True)
-    svc = LearnerService(cfg, consumer=KafkaConsumer(cfg))
+    svc = LearnerService(cfg)
+    svc.consumer = KafkaConsumer(cfg, on_revoke=svc.on_revoke)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     svc.install_signal_handlers()
     print(f"learning service: {cfg.kafka.bootstrap} {cfg.kafka.unparsed_topic} -> store "
           f"{cfg.store['url']} (learning {'on' if cfg.learning.enabled else 'off'})", flush=True)

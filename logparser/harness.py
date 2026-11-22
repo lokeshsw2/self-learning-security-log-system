@@ -223,6 +223,7 @@ class Harness:
         self.effort = effort
         self.budget_usd = budget_usd
         self.spent_usd = 0.0
+        self.item_costs: list = []            # what each finished item (or long-tail batch) cost
         self.lock = lock or contextlib.nullcontext()
         self.stop = stop
         self.current: dict | None = None      # what the harness is working on, for a progress view
@@ -243,7 +244,15 @@ class Harness:
         return cost
 
     def over_budget(self) -> bool:
-        return self.budget_usd is not None and self.spent_usd >= self.budget_usd
+        """At the budget, or so close that the next item would probably cross it (the average item so far)."""
+        if self.budget_usd is None:
+            return False
+        if self.spent_usd >= self.budget_usd:
+            return True
+        if self.item_costs:
+            avg = sum(self.item_costs) / len(self.item_costs)
+            return self.spent_usd + avg > self.budget_usd
+        return False
 
     def _call(self, role: str, messages: list):
         import anthropic
@@ -269,6 +278,7 @@ class Harness:
 
     def run_item(self, role: str, key: str, payload: dict) -> dict:
         """One bounded conversation for one queue item."""
+        spent0 = self.spent_usd
         agent = f"harness:{role}"
         t = Tools(self.e, agent)
         queue = QUEUES[role]
@@ -341,6 +351,7 @@ class Harness:
             with self.lock:
                 t.flag(queue, key, reason)
         self.current = None
+        self.item_costs.append(self.spent_usd - spent0)
         res = {"key": key, "saved": saved, "reason": None if saved else reason}
         self.results.append({"role": role, **res, "at": time.time()})
         return res
@@ -407,6 +418,7 @@ class Harness:
             done["calls"] += 1
             u = resp.usage
             cost = self._charge(model, u)
+            self.item_costs.append(cost)
             with self.lock:
                 self.e.store.log_tool("harness:longtail", "model_call", None, True,
                                       f"{len(chunk)} lines, {model}, ${cost:.4f}",
