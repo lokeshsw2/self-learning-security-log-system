@@ -114,6 +114,12 @@ SCHEMAS: dict[str, dict] = {
     "split": {"type": "object", "additionalProperties": False, "properties": {
         "fields": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
         "presence": {"type": "array", "items": {"type": "string"}, "maxItems": 4}}},
+    # Variant B: a Logstash filter as structured steps; logparser/lsdirect.py checks plugins, options and OCSF paths
+    "lsfilter": {"type": "object", "required": ["class", "map"], "properties": {
+        "class": {"type": "string"}, "profiles": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+        "extract": {"type": "array", "maxItems": 12},
+        "time": {"type": "object"}, "map": {"type": "array", "minItems": 1, "maxItems": 80},
+        "labels": {"type": "object"}}, "additionalProperties": False},
     "longtail": {"type": "object", "required": ["fields"], "additionalProperties": False, "properties": {
         "summary": {"type": "string"},
         # summary with {n} slots filled from the line's n-th masked value

@@ -118,17 +118,32 @@ TOOLSETS = {
               {"group": S, "rule": RULE, "labels": LABELS, "note": S}, ["group", "rule"]),
     ],
 }
-QUEUES = {"detection": "needs-detection", "source-naming": "needs-source", "grouping-repair": "grouping-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
-PROMPT_FILE = {"detection": "detection.md", "source-naming": "source_naming.md", "grouping-repair": "grouping_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
+LSFILTER = {"type": "object", "description": "The Logstash filter as structured steps: class, extract, time, map. See "
+            "the role instructions."}
+TOOLSETS["ls-direct"] = [
+    _tool("ls_samples", "Sample lines of the group: the raw line, the payload your filter receives, and the header "
+          "fields the router already read (@timestamp, @host, ...).", {"group": S}, ["group"]),
+    *[t for t in TOOLSETS["ocsf-mapping"] if t["name"] in ("search_ocsf", "get_class", "get_object", "get_attribute",
+                                                          "fetch_vendor_docs")],
+    _tool("test_lsfilter", "Render the filter to Logstash config, load it into a running Logstash, send the samples "
+          "and other stored lines of the group, and check every event: no failed step, schema-valid, every copied "
+          "value in its line, time from the line, outcome consistent. Shows the parsed fields and event of the "
+          "first line. Changes nothing.", {"group": S, "rule": LSFILTER, "labels": LABELS}, ["group", "rule"]),
+    _tool("save_lsfilter", "Save the filter. Accepted only if every tested line passes.",
+          {"group": S, "rule": LSFILTER, "labels": LABELS, "note": S}, ["group", "rule", "labels"]),
+]
+QUEUES = {"ls-direct": "needs-lsfilter", "detection": "needs-detection", "source-naming": "needs-source", "grouping-repair": "grouping-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
+PROMPT_FILE = {"ls-direct": "ls_direct.md", "detection": "detection.md", "source-naming": "source_naming.md", "grouping-repair": "grouping_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
                "longtail": "longtail.md"}
-SAVE_TOOL = {"detection": "save_detect", "source-naming": "save_source", "grouping-repair": "save_operation", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
+SAVE_TOOL = {"ls-direct": "save_lsfilter", "detection": "save_detect", "source-naming": "save_source", "grouping-repair": "save_operation", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
 
 
 def system_prompt(role: str) -> str:
     """Frozen per role, so the prompt prefix caches across items."""
     parts = [open(os.path.join(PROMPTS, "common.md")).read(), open(os.path.join(PROMPTS, PROMPT_FILE[role])).read()]
-    rules = os.path.join(os.path.dirname(PROMPTS), "..", "docs", "RULES.md")
-    parts.append("Rule language reference\n\n" + open(rules).read())
+    if role != "ls-direct":         # Variant B writes Logstash steps, not the rule language
+        rules = os.path.join(os.path.dirname(PROMPTS), "..", "docs", "RULES.md")
+        parts.append("Rule language reference\n\n" + open(rules).read())
     parts.append("You are called through an API. Call tools by name with JSON arguments; the command-line "
                  "forms above describe the same tools. Finish each item with the save tool, or reply with one "
                  "line starting FLAG: and the reason when it cannot be done.")
@@ -138,6 +153,12 @@ def system_prompt(role: str) -> str:
 def dispatch(t: Tools, name: str, a: dict) -> dict:
     """Run one tool call. Refusals come back as data so the model can react."""
     try:
+        if name == "ls_samples":
+            return t.ls_samples(a["group"])
+        if name == "test_lsfilter":
+            return t.test_lsfilter(a["group"], a["rule"], a.get("labels"))
+        if name == "save_lsfilter":
+            return t.save_lsfilter(a["group"], a["rule"], a.get("labels"), a.get("note", ""))
         if name == "get_samples" and a.get("item"):
             return t.detection_samples(a["item"])
         if name == "test_detect":
@@ -325,7 +346,7 @@ class Harness:
             results = []
             for c in calls:      # every call gets a result, all in one user message
                 args = c.input if isinstance(c.input, dict) else {}
-                if target and (c.name.startswith(("test_", "save_")) or c.name in ("get_samples", "diagnose",
+                if target and (c.name.startswith(("test_", "save_")) or c.name in ("get_samples", "ls_samples", "diagnose",
                                                                                     "report_problem")):
                     args[target] = key          # an agent works on its own item only
                     if target in ("source", "item"):
@@ -343,7 +364,7 @@ class Harness:
             messages.append({"role": "user", "content": results})
             if saved and not more:
                 break
-        if saved and target == "group":
+        if saved and target == "group" and role != "ls-direct":   # Variant B is checked in the sandbox, not by the engine audit
             self.touched.add(key)
         if saved and more and reason != "stopped by the user":
             # rules were saved, but the agent stopped with lines of other header formats unread: a human
@@ -453,10 +474,11 @@ class Harness:
 
 # Agents in order of what they deliver: header rules first (they change groups), then what makes events
 # (parsers, mappings, long tail); naming sources last, since parsing does not need it.
-PRIORITY = ["detection", "grouping-repair", "parser-gen", "ocsf-mapping", "longtail", "source-naming"]
+PRIORITY = ["detection", "grouping-repair", "parser-gen", "ocsf-mapping", "ls-direct", "longtail", "source-naming"]
 # Each agent's share of a cycle budget. Shares of agents with nothing waiting, and money an agent does
 # not spend, go to the agents after it.
-SHARES = {"detection": 0.10, "grouping-repair": 0.10, "parser-gen": 0.25, "ocsf-mapping": 0.35, "longtail": 0.10,
+SHARES = {"detection": 0.10, "grouping-repair": 0.10, "parser-gen": 0.25, "ocsf-mapping": 0.35, "ls-direct": 0.60,
+          "longtail": 0.10,
           "source-naming": 0.10}
 
 
@@ -482,8 +504,20 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
 
     With a budget, each agent gets its share of what is left (SHARES), in PRIORITY order, so the first
     agent cannot spend everything; agents with nothing waiting are skipped and their share moves on."""
-    from . import audit
     report: dict = {}
+
+    try:
+        return _learn(h, roles, limit, longtail_model, bucket, fix_rounds, on_progress, repair, only, shares, report)
+    finally:
+        if Tools.sandbox is not None:      # the warm Logstash of Variant B tests: stop it with the cycle
+            try:
+                Tools.sandbox.stop()
+            except Exception:
+                pass
+
+
+def _learn(h, roles, limit, longtail_model, bucket, fix_rounds, on_progress, repair, only, shares, report) -> dict:
+    from . import audit
 
     def step(role: str, only: set | None, tag: str) -> None:
         if h.stopped():
@@ -507,6 +541,10 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
             on_progress(tag, report[tag])
         return a
 
+    if "ls-direct" in roles:             # Variant B: every group without a Logstash filter is queued
+        from . import lsdirect
+        with h.lock:
+            report["ls-direct queue"] = {"queued": lsdirect.enqueue(h.e)}
     if "detection" in roles:             # code finds lines no rule reads and queues them
         from . import detection
         with h.lock:

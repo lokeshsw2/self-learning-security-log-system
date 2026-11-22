@@ -286,12 +286,15 @@ class Generated:
 
 # =================================================================== compiler
 class Compiler:
-    def __init__(self, engine, base_fallback: bool = False):
+    def __init__(self, engine, base_fallback: bool = False, direct: bool = False):
         """`base_fallback`: also compile groups that have a parser but no mapping yet, as the engine reads
         them (OCSF Base Event through the default mapping), so their data reaches the event store before
         a class mapping is learned."""
         self.e = engine
         self.base_fallback = base_fallback
+        # Variant B: each group's filter is the one an agent wrote (lsfilter:<group>), rendered from its steps;
+        # routing, tables and sink are shared with Variant A
+        self.direct = direct
         self.snap = engine.snap
         self.schema = engine.schema
         self.tz = engine.deployment_tz()
@@ -320,7 +323,8 @@ class Compiler:
         for g in groups.values():
             if g["merged_into"] or g["detail"].get("parent"):
                 continue
-            if not (g["parser_rule"] or kids.get(g["signature"]) or g["status"] in ("split", "mapped", "parsed")):
+            if not (g["parser_rule"] or kids.get(g["signature"]) or g["status"] in ("split", "mapped", "parsed")
+                    or (self.direct and self.snap.rule("lsfilter:" + g["signature"]))):
                 continue
             r = Root(g["signature"], g["bucket"], g["format"], g)
             sp = self.snap.rule("split:" + g["signature"])
@@ -599,7 +603,56 @@ class Compiler:
         return "\n".join(lines)
 
     # ---------------------------------------------------------- leaf
+    def compile_direct_leaf(self, leaf: Leaf, g: dict, root: Root) -> None:
+        from . import lsdirect
+        try:
+            if root.split:
+                raise Unsupported("split groups are written by Variant A")
+            rule = self.snap.rule("lsfilter:" + g["signature"])
+            if rule is None:
+                raise Unsupported("no Logstash filter written yet")
+            body = rule["body"]
+            lsdirect.validate(body, self.schema)
+            labels = {**lsdirect.labels_of(self.e, g), **(body.get("labels") or {})}
+            leaf.extract, leaf.text = lsdirect.render_parts(
+                body, self.schema, labels, leaf.gid, "@T@", (rule.get("version", 1), rule.get("version", 1)),
+                tz=self.tz, source=leaf.source.split("|")[0])
+            cname = self.schema.cls(body["class"])["name"]
+            self.caps_need.setdefault(body["class"], set()).update(self.schema.cls(cname)["attributes"])
+            leaf.status, leaf.reason = "ok", ""
+        except (Unsupported, lsdirect.FilterError) as ex:
+            leaf.status, leaf.reason = "unsupported", str(ex)
+
+    def direct_block(self, r: Root) -> str | None:
+        """Structured root, Variant B: the agent's extraction, then (unless a step failed) the rest."""
+        leaves = [l for l, _ in r.leaves if l.status == "ok" and l.included]
+        if not leaves:
+            return None
+        l = leaves[0]
+        from .lsdirect import FAIL_COND
+        return ((l.extract + "\n" if l.extract else "") +
+                f'if {FAIL_COND} {{\n  mutate {{ add_field => {{ "[lp][reason]" => "parse_failed" }} }}\n}} else {{\n'
+                f'{ind(l.text, 2)}\n}}')
+
+    def direct_bucket(self, rs: list) -> str:
+        """Unstructured bucket, Variant B: try each group's extraction in turn (most literal text first);
+        the first that succeeds owns the line."""
+        from .lsdirect import FAIL_COND, FAIL_TAG_LIST
+        cands = [(r, l) for r in rs for l, _ in r.leaves if l.status == "ok" and l.included]
+        cands.sort(key=lambda rl: (-len(re.sub(r"<[^>]+>", "", rl[0].g["template"] or "")), rl[1].gid))
+        seq, disp = [], []
+        for i, (r, l) in enumerate(cands):
+            attempt = (f"{l.extract}\nif {FAIL_COND} {{\n  mutate {{ remove_tag => {FAIL_TAG_LIST} "
+                       f'remove_field => ["[@metadata][s][f]"] }}\n}} else {{\n'
+                       f'  mutate {{ add_field => {{ "[@metadata][pm]" => "{i}" }} }}\n}}')
+            seq.append(f"if ![@metadata][pm] {{\n{ind(attempt, 2)}\n}}")
+            disp.append(f'{"if" if i == 0 else "else if"} [@metadata][pm] == "{i}" {{\n{ind(l.text, 2)}\n}}')
+        return ("\n".join(seq) + "\n" + " ".join(disp) +
+                '\nif ![@metadata][pm] {\n  mutate { add_field => { "[lp][reason]" => "parse_failed" } }\n}')
+
     def compile_leaf(self, leaf: Leaf, g: dict, root: Root) -> None:
+        if self.direct:
+            return self.compile_direct_leaf(leaf, g, root)
         e = self.e
         try:
             if not g["parser_rule"] or not e.snap.rule(g["parser_rule"]):
@@ -844,6 +897,9 @@ class Compiler:
                 blocks.append((r, self.root_block(r, T, include)))
         ub = []
         for bucket in by_bucket:
+            if self.direct:
+                ub.append((bucket, self.direct_bucket(by_bucket[bucket])))
+                continue
             clusters = self.plans.get(bucket) or []
             if not clusters:
                 continue
@@ -1008,6 +1064,8 @@ class Compiler:
         return "\n".join(out)
 
     def root_block(self, r: Root, T: str, include) -> str | None:
+        if self.direct:
+            return self.direct_block(r)
         try:
             pt, post = self.parse_step(r)
         except Unsupported:
@@ -1033,7 +1091,7 @@ class Compiler:
                 if r.status != "ok":
                     leaf.status, leaf.reason = "unsupported", r.reason
                     continue
-                if r.fmt == "unstructured" and (r.parser is None or r.parser["kind"] != "regex"):
+                if not self.direct and r.fmt == "unstructured" and (r.parser is None or r.parser["kind"] != "regex"):
                     leaf.status, leaf.reason = "unsupported", "unstructured group without a regex parser"
                     continue
                 self.compile_leaf(leaf, g, r)
@@ -1050,7 +1108,7 @@ class Compiler:
         self.plans = {}
         ub: dict[str, list] = {}
         for r in self.roots.values():
-            if r.fmt == "unstructured" and r.status == "ok" and r.parser and r.parser["kind"] == "regex" \
+            if not self.direct and r.fmt == "unstructured" and r.status == "ok" and r.parser and r.parser["kind"] == "regex" \
                     and any(l.included for l, _ in r.leaves):
                 ub.setdefault(r.bucket, []).append(r)
         for bucket, rs in ub.items():
@@ -1082,6 +1140,7 @@ class Compiler:
 
 # the Leaf dataclass gets a plain attribute at compile time
 Leaf.included = False
+Leaf.extract = ""
 
 
 # =================================================================== assembling files

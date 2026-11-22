@@ -83,6 +83,8 @@ class Deployer:
 
     def verify(self, work: str) -> tuple:
         """Compile, run a throwaway Logstash on stored samples, exclude disagreeing groups until stable."""
+        if self.cfg.logstash.variant == "direct":
+            return self.verify_direct(work)
         lv = _ls_verify()
         from .. import logstash as L
         db = snapshot(self.cfg.sqlite_path(), os.path.join(work, "engine.db"))
@@ -108,11 +110,59 @@ class Deployer:
             if not newly:
                 break
             include = used - newly
+        else:
+            gen, used = self._drop_last(comp, include, used, history)
         try:
             eng.store.close()
         except Exception:
             pass
         return gen, used or set(), history, causes, len(lines)
+
+    @staticmethod
+    def _drop_last(comp, include, used, history) -> tuple:
+        """The last allowed pass still found failing groups: leave them out (the smaller set is not run again)."""
+        if include is None or include == used:
+            return comp.compile(include) if include is not None else None, used
+        gen = comp.compile(include)
+        used = {gid for gid, leaf in comp.leaves.items() if leaf.included}
+        if history:
+            history[-1]["final_set_not_rerun"] = True
+        return gen, used
+
+    def verify_direct(self, work: str) -> tuple:
+        """Variant B: compile the agents' filters, run them on stored lines of every group, keep a group only
+        if each of its lines comes back as a passing event of that group and its filter takes no other lines."""
+        lv = _ls_verify()
+        from .. import logstash as L, lsdirect
+        db = snapshot(self.cfg.sqlite_path(), os.path.join(work, "engine.db"))
+        eng = lv.open_engine(db)
+        comp = L.Compiler(eng, direct=True)
+        include, history, causes = None, [], {}
+        gen = used = None
+        for it in range(1, self.cfg.logstash.verify_max_iter + 1):
+            gen = comp.compile(include)
+            used = {gid for gid, leaf in comp.leaves.items() if leaf.included}
+            if not used:
+                break
+            lines = lsdirect.verify_lines(eng, used, self.cfg.logstash.verify_per_group)
+            events, timing = lv.run_logstash(gen, [{"id": l["id"], "raw": l["raw"]} for l in lines], work, ROOT)
+            res = lsdirect.verify_judge(eng, lines, events, used, int(lv.NOW * 1000))
+            for gid, cause in res["exclude"].items():
+                causes.setdefault(gid, cause)
+            history.append({"pass": it, "groups": len(used), "lines": len(lines), "timing": timing,
+                            "verdicts": res["counts"]})
+            newly = set(res["exclude"]) & used
+            if not newly:
+                break
+            include = used - newly
+        else:
+            gen, used = self._drop_last(comp, include, used, history)
+        n_lines = history[-1]["lines"] if history else 0
+        try:
+            eng.store.close()
+        except Exception:
+            pass
+        return gen, used or set(), history, causes, n_lines
 
     def deploy(self, generation: int | None = None) -> dict:
         from .. import logstash as L

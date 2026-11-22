@@ -1109,6 +1109,31 @@ class Tools:
         self._log("save_detect", item, True, str(res)[:300])
         return res
 
+    # ------------------------------------------------------------ Variant B: Logstash filters
+    sandbox = None          # a logparser.sandbox.Sandbox, set by the caller (one warm Logstash per process)
+
+    def _sandbox(self):
+        if Tools.sandbox is None:
+            from .sandbox import Sandbox
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            Tools.sandbox = Sandbox(os.path.join(root, "work", "sandbox"))
+        return Tools.sandbox
+
+    def ls_samples(self, group: str) -> dict:
+        from . import lsdirect
+        return {"notice": NOTICE, **lsdirect.samples_for_agent(self, group)}
+
+    def test_lsfilter(self, group: str, body: dict, labels: dict | None = None) -> dict:
+        from . import lsdirect
+        res = lsdirect.run_test(self, self._sandbox(), group, body, labels)
+        self._log("test_lsfilter", group, bool(res.get("ok")),
+                  res.get("error") or f"samples {res.get('samples_valid')}/{res.get('samples')}")
+        return {"notice": NOTICE, **res}
+
+    def save_lsfilter(self, group: str, body: dict, labels: dict | None = None, note: str = "") -> dict:
+        from . import lsdirect
+        return lsdirect.save(self, self._sandbox(), group, body, labels, note)
+
     def flag(self, queue: str, key: str, reason: str) -> dict:
         """Give up on an item and hand it to a human."""
         self.store.x("UPDATE queue SET status='flagged', payload=json_set(payload,'$.flag_reason',?), done_at=? "
