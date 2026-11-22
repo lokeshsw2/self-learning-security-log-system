@@ -15,7 +15,7 @@ Tools
 - `save-source --source KEY --file RULE --also KEY2 --also KEY3 --note "..."`   saves the rule and names the
                                                 sources it claims; every claimed source other than KEY must be
                                                 listed with --also, or the save is refused
-- `flag needs-source KEY --note "..."`          give up on a source
+- `flag needs-source --source KEY --note "..."` give up on a source
 
 A source rule
 ```json
@@ -25,7 +25,8 @@ A source rule
 ```
 - `bucket`: RE2 pattern on the detection bucket (shown in each source key after the first `|`,
   before any `#family`). The program name or CEF vendor/product is in the bucket after the last `|`.
-- `requires`: decoded field names that must be present (dotted paths for nested JSON).
+- `requires`: decoded field names that must be present with a non-empty value (dotted paths for
+  nested JSON; null and empty values do not count, so pick fields that always carry a value).
 - `values`: RE2 patterns that named fields must match. Envelope fields start with `@`
   (`@host`, `@app`, `@msgid`, `@cisco_mnemonic`, ...).
 
@@ -39,6 +40,11 @@ How to work
    value that only this product has. One rule may name several sources of the
    same product (all program names of a Linux host, all message ids of a Cisco
    ASA); `test-source` shows every source it claims.
-3. The gate refuses a rule that matches only part of some source (too loose, or
+3. Name the product, not this network. Do not match on host names, device
+   names, serial numbers, IP addresses or tenant ids: they identify one
+   installation, and the rule must still hold when another device of the same
+   product appears. Use field names, product strings, log-type values and
+   message formats instead.
+4. The gate refuses a rule that matches only part of some source (too loose, or
    it cuts across products) or that would rename a source someone already named.
    Read `partial` and `conflicts` in the test output and tighten the rule.

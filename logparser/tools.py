@@ -903,7 +903,11 @@ def main(argv=None) -> None:
     ap.add_argument("--note", default="")
     ap.add_argument("--limit", type=int, default=10)
     ap.add_argument("--all", action="store_true", help="get-class: describe optional attributes too")
-    a = ap.parse_args(argv)
+    argv = list(sys.argv[1:] if argv is None else argv)
+    for i in range(len(argv) - 1):          # source keys start with "-": keep them as values, not options
+        if argv[i] in ("--source", "--also", "--group", "--bucket") and argv[i + 1].startswith("-"):
+            argv[i], argv[i + 1] = f"{argv[i]}={argv[i + 1]}", ""
+    a = ap.parse_args([x for x in argv if x != ""])
     t = Tools(open_engine(a), a.agent)
     body = None
     try:
@@ -975,7 +979,7 @@ def main(argv=None) -> None:
         elif tool == "save_longtail":
             out = t.save_longtail(a.group, body.get("fields") or {}, body.get("summary", ""))
         elif tool == "flag":
-            out = t.flag(a.arg[0], a.arg[1], a.note)
+            out = t.flag(a.arg[0], a.arg[1] if len(a.arg) > 1 else (a.source or a.group), a.note)
         else:
             out = {"error": f"unknown tool {a.tool}"}
     except Refused as exc:
