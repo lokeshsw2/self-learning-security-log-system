@@ -383,3 +383,9 @@ def test_constant_capital_word_after_the_time_is_refused(tmp_path):
             "test": {"kind": "regex", "pattern": r"^(?P<timestamp>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) [A-Z]{2,5} " + HOST_APP}}
     res = detection.evaluate(eng, items[0]["payload"], rule)
     assert not res["ok"] and "'PKT'" in res["target"]["bad_time"][-1]
+
+
+def test_trigger_sees_a_time_after_a_weekday():
+    assert detection.HEADED.match("Fri Nov 13 09:50:43 2026 app-09 cupsd: job 39 printed")
+    assert detection.HEADED.match("Fri, Nov 13 09:50:43 2026 host x")
+    assert not detection.HEADED.match("Friday was fine")

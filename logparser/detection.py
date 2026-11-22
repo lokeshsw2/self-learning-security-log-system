@@ -47,7 +47,7 @@ QUEUE = "needs-detection"
 # by a separator, a time of day, <pri>, or a bracketed date
 HEADED = re.compile(r"^(?:<\d{1,3}>|\d{4}[-/.]\d\d[-/.]\d\d|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}[\sT,]\d{1,2}:\d\d|"
                     r"\d\d/[A-Za-z]{3}/\d{4}|\d{10,13}(?:\.\d+)?(?:[\s|,;]|$)|\d{1,2}:\d\d:\d\d|"
-                    r"\[\d{1,4}[-/:.]|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s)")
+                    r"\[\d{1,4}[-/:.]|(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+)?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s)")
 NEED_ONE_OF = {"timestamp", "host", "app"}
 TIME_CODES = set("YmdbBjHIpMSfz%")              # strptime codes a time_format may use (no %y: century guessing)
 ZONE_NAMES = ("UTC GMT UT Z IST CET CEST EET EEST WET WEST BST MSK EST EDT CST CDT MST MDT PST PDT AKST AKDT HST "
