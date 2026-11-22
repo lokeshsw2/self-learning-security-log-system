@@ -224,6 +224,7 @@ class Harness:
         self.budget_usd = budget_usd
         self.spent_usd = 0.0
         self.item_costs: list = []            # what each finished item (or long-tail batch) cost
+        self.role_until: float | None = None   # learn(): spend at which the running agent's allotment ends
         self.lock = lock or contextlib.nullcontext()
         self.stop = stop
         self.current: dict | None = None      # what the harness is working on, for a progress view
@@ -244,14 +245,16 @@ class Harness:
         return cost
 
     def over_budget(self) -> bool:
-        """At the budget, or so close that the next item would probably cross it (the average item so far)."""
+        """At the budget (or at the running agent's allotment, `role_until`), or so close that the next item
+        would probably cross it (the average item so far)."""
         if self.budget_usd is None:
             return False
-        if self.spent_usd >= self.budget_usd:
+        limit = min(self.budget_usd, self.role_until) if self.role_until is not None else self.budget_usd
+        if self.spent_usd >= limit:
             return True
         if self.item_costs:
             avg = sum(self.item_costs) / len(self.item_costs)
-            return self.spent_usd + avg > self.budget_usd
+            return self.spent_usd + avg > limit
         return False
 
     def _call(self, role: str, messages: list):
@@ -448,10 +451,37 @@ class Harness:
         return done
 
 
+# Agents in order of what they deliver: header rules first (they change groups), then what makes events
+# (parsers, mappings, long tail); naming sources last, since parsing does not need it.
+PRIORITY = ["detection", "grouping-repair", "parser-gen", "ocsf-mapping", "longtail", "source-naming"]
+# Each agent's share of a cycle budget. Shares of agents with nothing waiting, and money an agent does
+# not spend, go to the agents after it.
+SHARES = {"detection": 0.10, "grouping-repair": 0.10, "parser-gen": 0.25, "ocsf-mapping": 0.35, "longtail": 0.10,
+          "source-naming": 0.10}
+
+
+def allotment(remaining: float, role: str, later: list, shares: dict) -> float:
+    """This agent's part of what is left: its share over the shares of itself and the agents still to run."""
+    total = sum(shares.get(r, 0.0) for r in [role] + later)
+    return remaining * shares.get(role, 0.0) / total if total > 0 else remaining
+
+
+def waiting(e, role: str) -> int:
+    if role == "longtail":
+        name = "longtail"
+    else:
+        name = QUEUES[role]
+    return e.store.q("SELECT COUNT(*) n FROM queue WHERE name=? AND status='open'", (name,))[0]["n"]
+
+
 def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: str | None = None,
-          fix_rounds: int = 1, on_progress=None, repair: bool = True, only: set | None = None) -> dict:
+          fix_rounds: int = 1, on_progress=None, repair: bool = True, only: set | None = None,
+          shares: dict | None = None) -> dict:
     """Run the agents, self-audit what they saved, give failing groups `fix_rounds` more tries with
-    the audit findings as feedback, and audit again. Code decides; the agents only write rules."""
+    the audit findings as feedback, and audit again. Code decides; the agents only write rules.
+
+    With a budget, each agent gets its share of what is left (SHARES), in PRIORITY order, so the first
+    agent cannot spend everything; agents with nothing waiting are skipped and their share moves on."""
     from . import audit
     report: dict = {}
 
@@ -481,8 +511,23 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
         from . import detection
         with h.lock:
             report["detection scan"] = detection.scan(h.e)
-    for role in roles:
-        step(role, only, role)
+    shares = shares or SHARES
+    order = [r for r in PRIORITY if r in roles] + [r for r in roles if r not in PRIORITY]
+    for i, role in enumerate(order):
+        if h.budget_usd is not None and only is None:
+            with h.lock:
+                if not waiting(h.e, role):
+                    report[role] = {"skipped": "nothing waiting"}
+                    continue
+                later = [r for r in order[i + 1:] if waiting(h.e, r)]
+            part = allotment(max(0.0, h.budget_usd - h.spent_usd), role, later, shares)
+            h.role_until = h.spent_usd + part
+            step(role, only, role)
+            report[role]["allotted_usd"] = round(part, 4)
+            report[role]["spent_usd"] = round(h.spent_usd - (h.role_until - part), 4)
+            h.role_until = None
+        else:
+            step(role, only, role)
     if not h.touched:
         return report
     a = check("audit")

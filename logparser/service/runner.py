@@ -131,7 +131,8 @@ class LearnerService:
     # ---------------------------------------------------------------- intake
     def _done_offset(self, stream: str) -> int:
         """Next offset not yet processed for a partition, from the store (survives crashes and rebalances)."""
-        return int(self.eng.store.get_state(f"offset:{stream}", -1))
+        with self.lock:
+            return int(self.eng.store.get_state(f"offset:{stream}", -1))
 
     def step(self) -> dict:
         """Read one batch, skip what was already processed, process the rest, then commit its offsets."""
@@ -192,7 +193,8 @@ class LearnerService:
         return time.strftime("%Y-%m-%d", time.gmtime(self.clock()))
 
     def _spent_today(self) -> float:
-        return float(self.eng.store.get_state(f"learn_spend:{self._day()}", 0.0))
+        with self.lock:
+            return float(self.eng.store.get_state(f"learn_spend:{self._day()}", 0.0))
 
     def _add_spend(self, usd: float) -> None:
         with self.lock:
@@ -200,7 +202,8 @@ class LearnerService:
 
     def open_work(self) -> dict:
         from ..harness import ORDER, QUEUES
-        rows = self.eng.store.q("SELECT name, COUNT(*) n FROM queue WHERE status='open' GROUP BY name")
+        with self.lock:      # the store is shared with the learning thread: one user at a time
+            rows = self.eng.store.q("SELECT name, COUNT(*) n FROM queue WHERE status='open' GROUP BY name")
         n = {r["name"]: r["n"] for r in rows}
         return {role: n.get(QUEUES[role], 0) for role in ORDER} | {"longtail": n.get("longtail", 0)}
 
@@ -211,8 +214,10 @@ class LearnerService:
             return "learning is off"
         if self.learner is not None and self.learner.is_alive():
             return "a cycle is running"
-        last = float(self.eng.store.get_state("learn_last", 0.0))
-        wait = lc.interval_s * (2 ** min(int(self.eng.store.get_state("learn_failures", 0)), 5))  # back off
+        with self.lock:
+            last = float(self.eng.store.get_state("learn_last", 0.0))
+            failures = int(self.eng.store.get_state("learn_failures", 0))
+        wait = lc.interval_s * (2 ** min(failures, 5))  # back off after failed cycles
         if self.clock() - last < wait:
             return "interval not reached"
         if not any(self.open_work().values()):
@@ -227,7 +232,8 @@ class LearnerService:
         from ..harness import ORDER, Harness, learn
         lc = self.cfg.learning
         budget = max(0.0, min(lc.budget_usd_per_cycle, lc.budget_usd_per_day - self._spent_today()))
-        gen_before = int(self.eng.store.get_state("registry_generation", 0))
+        with self.lock:
+            gen_before = int(self.eng.store.get_state("registry_generation", 0))
         roles = ORDER + ["longtail"] if lc.roles == "all" else list(lc.roles)
         t0 = self.clock()
         h = None
@@ -248,7 +254,8 @@ class LearnerService:
         finally:
             spent = h.spent_usd if h is not None else 0.0
             self._add_spend(spent)
-            gen_after = int(self.eng.store.get_state("registry_generation", 0))
+            with self.lock:
+                gen_after = int(self.eng.store.get_state("registry_generation", 0))
             entry.update(seconds=round(self.clock() - t0, 1), spent_usd=round(spent, 4),
                          rules_changed=gen_after != gen_before)
             with self.lock:
@@ -290,6 +297,7 @@ class LearnerService:
             else:
                 self.idle_since = self.idle_since or self.clock()
                 self.idle_flush()
+                self.stop.wait(0.05)                  # a real consumer blocks in poll; do not spin on the lock
             if self.learning_due() is None:          # before any exit check: a flush may have queued work
                 self.start_learning()
             busy = self.learner is not None and self.learner.is_alive()
@@ -309,11 +317,13 @@ class LearnerService:
                 lag = self.consumer.lag()
             except Exception as exc:          # status must never fail the service
                 lag = {"error": str(exc)[:200]}
+        with self.lock:
+            gen = int(self.eng.store.get_state("registry_generation", 0))
+            last = (self.eng.store.get_state("learn_history", []) or [None])[-1]
+            deploy = (self.eng.store.get_state("deploy_history", []) or [None])[-1]
         return {**self.stats, "lag": lag, "open_work": self.open_work(),
                 "spent_today_usd": self._spent_today(), "learning": self.learning_due() or "due",
-                "rules_generation": int(self.eng.store.get_state("registry_generation", 0)),
-                "last_learn": (self.eng.store.get_state("learn_history", []) or [None])[-1],
-                "config": self.cfg.redacted()}
+                "rules_generation": gen, "last_learn": last, "last_deploy": deploy, "config": self.cfg.redacted()}
 
     def install_signal_handlers(self) -> None:
         for s in (signal.SIGINT, signal.SIGTERM):

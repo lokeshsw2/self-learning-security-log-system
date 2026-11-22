@@ -235,7 +235,7 @@ def test_budget_stops_before_an_item_it_probably_cannot_afford():
     import types
     from logparser.harness import Harness
     h = Harness.__new__(Harness)
-    h.budget_usd, h.spent_usd, h.item_costs, h.stop = 0.50, 0.42, [0.10, 0.12], None
+    h.budget_usd, h.spent_usd, h.item_costs, h.stop, h.role_until = 0.50, 0.42, [0.10, 0.12], None, None
     assert h.over_budget()                                  # 0.42 + 0.11 average > 0.50
     h.spent_usd = 0.30
     assert not h.over_budget()
@@ -296,3 +296,63 @@ def test_clickhouse_statements():
 def test_sink_time_is_exact_to_the_millisecond():
     text = open(os.path.join(ROOT, "deploy", "logstash", "output-clickhouse.conf")).read()
     assert "t / 1000.0" not in text and "(ti % 1000) * 1000" in text
+
+
+
+# --------------------------------------------------------------------- budget shares per agent
+def test_allotment_shares_what_is_left():
+    from logparser.harness import SHARES, allotment
+    later = ["ocsf-mapping", "longtail", "source-naming"]
+    # parsers get 0.25 / (0.25 + 0.35 + 0.10 + 0.10) of what is left
+    assert allotment(1.0, "parser-gen", later, SHARES) == pytest.approx(0.25 / 0.80)
+    assert allotment(0.5, "source-naming", [], SHARES) == pytest.approx(0.5)    # the last agent gets the rest
+
+
+class CostingClient:
+    """Agent-loop fake whose every call costs the same; it never saves, so an agent keeps going until its
+    allotment stops it. Records which agent each call was for."""
+
+    def __init__(self):
+        import types
+        self.calls = []
+        self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=self._create))
+
+    def _create(self, **kw):
+        import types
+        role = kw["system"].split("Role: ", 1)[1].split(".", 1)[0] if "Role: " in kw["system"] else "?"
+        self.calls.append(role)
+        usage = types.SimpleNamespace(input_tokens=10000, output_tokens=2000, cache_read_input_tokens=0,
+                                      cache_creation_input_tokens=0)      # $0.04 per call on Sonnet prices
+        return types.SimpleNamespace(stop_reason="end_turn", usage=usage,
+                                     content=[types.SimpleNamespace(type="text", text="FLAG: cannot tell")])
+
+
+def test_first_agent_cannot_spend_the_whole_cycle(tmp_path):
+    from logparser.harness import Harness, learn
+    from tests.test_engine import make
+    eng = make(tmp_path)
+    for i in range(30):                                       # plenty of naming and parser work
+        eng.store.enqueue("needs-source", f"src{i}", {"source": f"src{i}"})
+        eng.store.enqueue("needs-parser", f"g{i}", {"signature": f"g{i}"})
+    fake = CostingClient()
+    h = Harness(eng, client=fake, model="claude-sonnet-5-5", budget_usd=0.40)
+    report = learn(h, ["source-naming", "parser-gen"], 30, "claude-sonnet-5-5", fix_rounds=0)
+    roles = [c.lower() for c in fake.calls]
+    assert roles[0].startswith("parser")                      # parsers first: they make events
+    assert any(r.startswith("source") for r in roles)        # naming still got its share
+    assert h.spent_usd <= 0.40 + 1e-9
+    assert report["parser-gen"]["allotted_usd"] == pytest.approx(0.40 * 0.25 / 0.35, abs=1e-3)
+    assert report["source-naming"]["spent_usd"] > 0
+
+
+def test_agents_with_nothing_waiting_pass_their_share_on(tmp_path):
+    from logparser.harness import Harness, learn
+    from tests.test_engine import make
+    eng = make(tmp_path)
+    for i in range(30):
+        eng.store.enqueue("needs-source", f"src{i}", {"source": f"src{i}"})
+    fake = CostingClient()
+    h = Harness(eng, client=fake, model="claude-sonnet-5-5", budget_usd=0.20)
+    report = learn(h, ["parser-gen", "ocsf-mapping", "source-naming"], 30, "claude-sonnet-5-5", fix_rounds=0)
+    assert report["parser-gen"] == {"skipped": "nothing waiting"}
+    assert report["source-naming"]["allotted_usd"] == pytest.approx(0.20)   # the whole budget, nothing else to do
