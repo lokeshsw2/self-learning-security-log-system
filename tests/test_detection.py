@@ -67,6 +67,7 @@ def test_good_rule_reads_samples_and_changes_nothing_else(tmp_path):
     res = detection.evaluate(eng, item, GOOD)
     assert res["ok"] and res["regressions"] == 0 and res["target"]["read"] == 25
     assert res["target"]["first"]["header"]["@app"] == "gdm-password"
+    assert set(res["relearn_estimate"]) >= {"groups_with_rules", "lines", "stored_events_with_a_class"}
 
 
 def test_added_rule_is_a_fallback_scoped_to_its_shape(tmp_path):

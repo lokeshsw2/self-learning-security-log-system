@@ -200,15 +200,20 @@ def evaluate(e, item: dict, body: dict, lines: list | None = None) -> dict:
     ok = target["read"] == target["lines"] and target["lines"] > 0 and regress == 0
     # what saving would cost: groups of this source whose learned parser will not fit once the
     # header is read (a parser was written for the whole line); long-tail rules are carried over
-    relearn = {"parser_groups": 0, "lines": 0}
-    for r in e.store.q("SELECT signature, count, parser_rule FROM groups WHERE source=? AND merged_into IS NULL "
-                       "AND parser_rule IS NOT NULL", (item["source"],)):
-        relearn["parser_groups"] += 1
-        relearn["lines"] += r["count"]
+    relearn = {"groups_with_rules": 0, "lines": 0, "stored_events_with_a_class": 0}
+    for r in e.store.q("SELECT signature, count, parser_rule, mapping_rule FROM groups WHERE source=? AND "
+                       "merged_into IS NULL", (item["source"],)):
+        if r["parser_rule"] or r["mapping_rule"]:
+            relearn["groups_with_rules"] += 1
+            relearn["lines"] += r["count"]
+            relearn["stored_events_with_a_class"] += e.store.q(
+                "SELECT COUNT(*) n FROM events WHERE signature=? AND class_uid > 0", (r["signature"],))[0]["n"]
     return {"ok": ok, "target": target, "checked_lines": len(lines), "regressions": regress,
             "regression_examples": examples, "newly_read": dict(improved.most_common(10)),
-            "relearn_estimate": {**relearn, "note": "parsers written for the whole line usually have to be learned "
-                                 "again after the header is read; long-tail rules are carried over by code"},
+            "relearn_estimate": {**relearn, "note": "parsers written for the whole line and their mappings usually "
+                                 "have to be learned again once the header is read, and their events fall back to "
+                                 "Base Event until then; long-tail rules (and mappings where a built-in parser reads "
+                                 "the payload) are carried over by code"},
             "scope": f"only lines no other rule reads, whose first token has the shape {item['shape']!r}"}
 
 
@@ -257,13 +262,15 @@ def _learned_before(e, src: str) -> list:
         if not samples:
             continue
         raw = samples[0]["raw"]
-        rec = Record("carry", 0, text=raw)
+        label = src.split("|", 1)[0]
+        rec = Record("carry", 0, text=raw, label=None if label == "-" else label)
         det, _, cols = e.analyse(rec)
         sg = e._sign(det, None, cols)
         res = e.parse_record(e.groups[sig], det, sg, rec)
         fields = {k: v for k, v in (res.get("fields") or {}).items()
                   if not k.startswith("@") and k != "summary" and isinstance(v, str)}
-        out.append({"from": sig, "raw": raw, "longtail": lt["body"] if lt else None, "fields": fields,
+        out.append({"from": sig, "raw": raw, "label": None if label == "-" else label,
+                    "longtail": lt["body"] if lt else None, "fields": fields,
                     "parser": e.snap.rule(g["parser_rule"])["body"] if g["parser_rule"] else None,
                     "mapping": e.snap.rule(g["mapping_rule"])["body"] if g["mapping_rule"] else None,
                     "labels": g.get("labels") or {}})
@@ -276,9 +283,11 @@ def carry_over(e, learned: list, agent: str) -> dict:
     t = Tools(e, agent)
     out = {"longtail": 0, "parser": 0, "mapping": 0, "to_learn_again": 0}
     for item in learned:
-        rec = Record("carry", 0, text=item["raw"])
+        rec = Record("carry", 0, text=item["raw"], label=item["label"])
         det, _, cols = e.analyse(rec)
-        g = e.canonical(e._sign(det, None, cols).signature)
+        g = e.canonical(e._sign(det, rec.label, cols).signature)
+        if g is not None and g["status"] == "split":
+            g = e._subgroup(g, det)
         if g is None or g["signature"] == item["from"]:
             continue
         sig = g["signature"]
@@ -289,6 +298,10 @@ def carry_over(e, learned: list, agent: str) -> dict:
                 if item["mapping"] is not None:
                     t.save_mapping(sig, item["mapping"], item["labels"], "carried over after a new detection rule")
                     out["mapping"] += 1
+            elif g.get("parser_rule") and item["mapping"] is not None:
+                # a built-in parser reads the new payload (key=value, JSON): the old mapping may still fit
+                t.save_mapping(sig, item["mapping"], item["labels"], "carried over after a new detection rule")
+                out["mapping"] += 1
             elif item["longtail"] is not None and not e.snap.rule("longtail:" + sig):
                 t.save_longtail(sig, item["fields"], item["longtail"].get("summary", ""))
                 out["longtail"] += 1
