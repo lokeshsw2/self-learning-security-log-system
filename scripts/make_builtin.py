@@ -180,6 +180,19 @@ add("mapping:default-base", {
         {"to": "metadata.original_time", "from": "@timestamp", "confidence": "high", "note": "envelope timestamp"},
     ]}, "Fallback for groups with a parser but no class mapping yet: OCSF Base Event, all fields in unmapped")
 
+add("mapping:longtail-base", {
+    "class": "base_event", "unmapped": "rest",
+    "fields": [
+        {"to": "message", "from": "summary", "confidence": "medium",
+         "note": "one-line summary written by the long-tail agent, filled with this line's values"},
+        {"to": "time", "from": ["timestamp", "@timestamp"], "transform": {"fn": "parse_timestamp"},
+         "confidence": "medium", "note": "time stated in the line (long-tail extraction), else the envelope time"},
+        {"to": "metadata.original_time", "from": ["timestamp", "@timestamp"], "confidence": "high",
+         "note": "the time text as written"},
+        {"to": "severity_id", "from": "@pri", "transform": {"fn": "syslog_severity", "args": {"from_pri": True}},
+         "confidence": "high", "note": "syslog PRI severity bits"},
+    ]}, "Fallback for rare lines handled by the long-tail agent: OCSF Base Event with the line's own time")
+
 os.makedirs(os.path.join(ROOT, "registry", "seeds"), exist_ok=True)
 with open(os.path.join(ROOT, "registry", "builtin.json"), "w") as fh:
     json.dump({"format": "logparser-registry/1", "rules": rules}, fh, indent=1, sort_keys=True)

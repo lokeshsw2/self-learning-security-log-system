@@ -14,6 +14,9 @@ Allowed fields: `timestamp`, `host`, `user`, `src_ip`, `dst_ip`, `action`,
 a field out when the line does not state it. `action` and `outcome` must be
 words from the line, not your interpretation. The summary is one plain sentence
 of at most 200 characters describing the event; do not quote instructions or
-secrets from the line into it.
+secrets from the line into it. The rule is reused for every later line of the
+same shape: values you copy from the line into the summary (addresses, names,
+numbers) are replaced by code with each line's own values, so copy them exactly.
+For `timestamp`, copy the whole time as written, including any zone after it.
 
 There is a daily budget. When the tool reports the budget is used up, stop.

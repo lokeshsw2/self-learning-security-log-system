@@ -955,6 +955,60 @@
     "source": "this project"
    },
    "rule_id": "mapping:default-base"
+  },
+  {
+   "body": {
+    "class": "base_event",
+    "fields": [
+     {
+      "confidence": "medium",
+      "from": "summary",
+      "note": "one-line summary written by the long-tail agent, filled with this line's values",
+      "to": "message"
+     },
+     {
+      "confidence": "medium",
+      "from": [
+       "timestamp",
+       "@timestamp"
+      ],
+      "note": "time stated in the line (long-tail extraction), else the envelope time",
+      "to": "time",
+      "transform": {
+       "fn": "parse_timestamp"
+      }
+     },
+     {
+      "confidence": "high",
+      "from": [
+       "timestamp",
+       "@timestamp"
+      ],
+      "note": "the time text as written",
+      "to": "metadata.original_time"
+     },
+     {
+      "confidence": "high",
+      "from": "@pri",
+      "note": "syslog PRI severity bits",
+      "to": "severity_id",
+      "transform": {
+       "args": {
+        "from_pri": true
+       },
+       "fn": "syslog_severity"
+      }
+     }
+    ],
+    "unmapped": "rest"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Fallback for rare lines handled by the long-tail agent: OCSF Base Event with the line's own time",
+    "source": "this project"
+   },
+   "rule_id": "mapping:longtail-base"
   }
  ]
 }

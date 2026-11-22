@@ -21,7 +21,7 @@ import sys
 import time
 
 from . import ocsf, parsers, registry, rx, signature
-from .engine import DEFAULT_MAPPING, STRUCTURED, Engine
+from .engine import DEFAULT_MAPPING, STRUCTURED, Engine, longtail_fields
 from .formats import ParseError
 from .reader import Record
 
@@ -42,6 +42,50 @@ def _clip(s: str) -> str:
 
 def _slug(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", s).strip("-").lower()[:80]
+
+
+def _parts(payload: str, variables: list, value: str) -> list | None:
+    """Express `value` as masked values joined by the fixed text between them, or None.
+    The value must cover whole masked values; the fixed pieces are at most 40 characters."""
+    spans, cur = [], 0
+    for _, v in variables:
+        j = payload.find(v, cur)
+        if j < 0:
+            return None
+        spans.append((j, j + len(v)))
+        cur = j + len(v)
+    a = payload.find(value)
+    if a < 0:
+        return None
+    b = a + len(value)
+    inside = [i for i, (st, en) in enumerate(spans) if st < b and en > a]
+    if not inside or any(spans[i][0] < a or spans[i][1] > b for i in inside):
+        return None
+    parts, pos = [], a
+    for i in inside:
+        st, en = spans[i]
+        if st > pos:
+            parts.append(payload[pos:st])
+        parts.append(i)
+        pos = en
+    if pos < b:
+        parts.append(payload[pos:b])
+    if len(parts) < 2 or any(isinstance(p, str) and len(p) > 40 for p in parts):
+        return None
+    return parts
+
+
+def _summary_template(summary: str, variables: list) -> str:
+    """Replace the sample line's masked values that appear in the summary with {n} slots,
+    so each line's summary carries its own values. Longest values first, whole tokens only."""
+    out = summary
+    order = sorted(range(len(variables)), key=lambda i: -len(variables[i][1]))
+    for i in order:
+        v = variables[i][1]
+        if len(v) < 2:
+            continue
+        out = re.sub(r"(?<![\w.{])" + re.escape(v) + r"(?![\w])", "{%d}" % i, out)
+    return out
 
 
 class Tools:
@@ -905,16 +949,34 @@ class Tools:
                     if j >= 0 and edge and len(edge) <= 8 and not any(ch.isalnum() for ch in edge):
                         wrapped = (i, "".join(sorted(set(edge))))
                         break
+            parts = None if idx is not None or wrapped else _parts(det.payload, sg.variables, value)
             if idx is not None:
                 spec[name] = {"var": idx}
             elif wrapped:
                 spec[name] = {"var": wrapped[0], "trim": wrapped[1]}
+            elif parts:
+                spec[name] = {"parts": parts}      # e.g. a time masked as <TS> followed by a fixed " UTC"
             elif value in static:
                 spec[name] = {"const": value}
             else:
                 dropped.append(name)
+        # every kept field must give a value literally present in every stored line of the group
+        if spec:
+            srows, rest = self._group_rows(g, 500)
+            for row in srows + rest:
+                r = self._rec(row)
+                d, _, c = self.e.analyse(r)
+                got = longtail_fields({"fields": spec}, self.e._sign(d, r.label, c).variables, row["raw"])
+                for name in list(spec):
+                    if name not in got or not got[name] or got[name] not in row["raw"]:
+                        del spec[name]
+                        dropped.append(name)
         summary = " ".join("".join(ch for ch in str(summary) if ch.isprintable()).split())[:200]
+        summary = summary.replace("{", "(").replace("}", ")")
         body = {"fields": spec, "summary": summary}
+        templ = _summary_template(summary, sg.variables)
+        if templ != summary:
+            body["summary_t"] = templ      # the sample's values become slots filled from each line
         registry.validate_rule("longtail", body)
         rule_id = f"longtail:{g['signature']}"
         v = registry.save_rule(self.store, rule_id, body, {"created_by": self.agent, "tag": "ai_extracted"})

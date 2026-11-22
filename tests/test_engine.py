@@ -429,3 +429,38 @@ def test_validator_catches_structure_errors():
         mutate(ev)
         errs = SCHEMA.validate(ev)[0]
         assert any(needle in x for x in errs), (needle, errs)
+
+
+PG = "2026-11-22 09:23:59.600 UTC [48021] [unknown]@[unknown] LOG:  connection received: host=10.20.9.56 port=41284"
+PG2 = "2026-11-22 09:20:36.407 UTC [48000] [unknown]@[unknown] LOG:  connection received: host=10.20.1.24 port=51255"
+
+
+def test_longtail_keeps_the_lines_own_time_and_per_line_summary(tmp_path):
+    eng = make(tmp_path, group_threshold=50)
+    feed(eng, tmp_path, [PG])
+    sig = eng.store.queue_items("longtail")[0]["key"]
+    res = Tools(eng, "longtail").save_longtail(
+        sig, {"timestamp": "2026-11-22 09:23:59.600 UTC", "src_ip": "10.20.9.56", "action": "connection received"},
+        "PostgreSQL logged a connection received from host 10.20.9.56 on port 41284.")
+    assert res["kept"] == ["action", "src_ip", "timestamp"] and res["dropped"] == []
+    rule = eng.store.active_rule("longtail:" + sig)["body"]
+    assert rule["fields"]["timestamp"]["parts"][1] == " UTC"
+    assert "{" in rule["summary_t"] and "10.20.9.56" not in rule["summary_t"]
+    feed(eng, tmp_path, [PG2])
+    row = eng.store.q("SELECT fields, ocsf FROM events ORDER BY raw_id DESC")[0]
+    f, ev = json.loads(row["fields"]), json.loads(row["ocsf"])
+    assert f["timestamp"] == "2026-11-22 09:20:36.407 UTC"
+    assert ev["message"] == "PostgreSQL logged a connection received from host 10.20.1.24 on port 51255."
+    assert ev["time"] == 1795339236407            # the line's own time, not the ingest time
+    assert ev["metadata"]["original_time"] == "2026-11-22 09:20:36.407 UTC"
+
+
+def test_longtail_parts_must_hold_on_every_stored_line(tmp_path):
+    eng = make(tmp_path, group_threshold=50)
+    feed(eng, tmp_path, [PG, PG2])
+    sig = eng.store.queue_items("longtail")[0]["key"]
+    # a value that cuts through a masked value would not carry over to other lines
+    res = Tools(eng, "longtail").save_longtail(sig, {"src_ip": "9.56", "dst_ip": "10.20.9.56 port"}, "x")
+    assert res["dropped"] == ["src_ip"] and res["kept"] == ["dst_ip"]
+    f = json.loads(eng.store.q("SELECT fields FROM events e JOIN raw r ON r.id=e.raw_id WHERE r.raw=?", (PG2,))[0]["fields"])
+    assert f["dst_ip"] == "10.20.1.24 port"

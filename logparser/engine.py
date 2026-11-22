@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 
 from drain3 import TemplateMiner
@@ -24,6 +25,29 @@ from .store import SqliteStore, _j
 STRUCTURED = ("json", "kv", "cef", "leef", "delimited", "xml")
 _ZONE_TAIL = __import__("logparser.rx", fromlist=["x"]).compile(r"\d\d:\d\d(?:[.,]\d+)?\s*(Z|z|[+-]\d\d:?\d\d)$")
 DEFAULT_MAPPING = "mapping:default-base"
+LONGTAIL_MAPPING = "mapping:longtail-base"
+
+
+def longtail_fields(body: dict, variables: list, text: str) -> dict:
+    """Apply a positional long-tail rule to one line's masked values."""
+    vals = [v for _, v in variables]
+    fields = {}
+    for name, spec in body["fields"].items():
+        if "const" in spec:
+            if spec["const"] in text:
+                fields[name] = spec["const"]
+        elif "parts" in spec:
+            if all(not isinstance(p, int) or p < len(vals) for p in spec["parts"]):
+                fields[name] = "".join(vals[p] if isinstance(p, int) else p for p in spec["parts"])
+        elif spec["var"] < len(vals):
+            val = vals[spec["var"]]
+            fields[name] = val.strip(spec["trim"]) if spec.get("trim") else val
+    if body.get("summary_t"):
+        fields["summary"] = re.sub(r"\{(\d+)\}", lambda m: vals[int(m.group(1))] if int(m.group(1)) < len(vals)
+                                   else "?", body["summary_t"])
+    elif body.get("summary"):
+        fields["summary"] = body["summary"]
+    return fields
 MAX_SOURCES_PER_LABEL = 2000
 
 
@@ -543,16 +567,7 @@ class Engine:
             lt = self.snap.rule("longtail:" + g["signature"])
             if not lt:
                 return {"status": "pending"}
-            fields = {}
-            for name, spec in lt["body"]["fields"].items():
-                if "const" in spec:
-                    if spec["const"] in rec.text:
-                        fields[name] = spec["const"]
-                elif spec["var"] < len(sg.variables):
-                    val = sg.variables[spec["var"]][1]
-                    fields[name] = val.strip(spec["trim"]) if spec.get("trim") else val
-            if lt["body"].get("summary"):
-                fields["summary"] = lt["body"]["summary"]
+            fields = longtail_fields(lt["body"], sg.variables, rec.text)
             for k, v in det.header.items():
                 fields.setdefault(k, v)
             tags.append("ai_extracted")
@@ -563,8 +578,11 @@ class Engine:
             except ParseError as exc:
                 return {"status": "dlq", "stage": "parse", "reason": str(exc)[:300]}
             rule_used = g["parser_rule"]
+        mapping_rule = g["mapping_rule"]
+        if not mapping_rule and body is None and self.snap.rule(LONGTAIL_MAPPING):
+            mapping_rule = LONGTAIL_MAPPING     # rare lines: base event with the line's own time
         if not mapping_given:
-            mapping = self._mapping(g["mapping_rule"])
+            mapping = self._mapping(mapping_rule)
             if not g["mapping_rule"]:
                 tags.append("base_fallback")
         if mapping is None:
@@ -577,7 +595,7 @@ class Engine:
             tags.append("transform_error")
         return {"status": "parsed", "fields": fields, "event": event, "valid": not errors,
                 "errors": errors + problems, "warnings": warnings, "tags": tags,
-                "parser_rule": rule_used, "mapping_rule": g["mapping_rule"] or DEFAULT_MAPPING}
+                "parser_rule": rule_used, "mapping_rule": mapping_rule or DEFAULT_MAPPING}
 
     def _event_row(self, rid: int, g: dict, res: dict) -> tuple:
         """Every parsed event carries its group id and the rule versions that made it."""

@@ -115,10 +115,16 @@ SCHEMAS: dict[str, dict] = {
         "presence": {"type": "array", "items": {"type": "string"}, "maxItems": 4}}},
     "longtail": {"type": "object", "required": ["fields"], "additionalProperties": False, "properties": {
         "summary": {"type": "string"},
+        # summary with {n} slots filled from the line's n-th masked value
+        "summary_t": {"type": "string", "maxLength": 400},
         "fields": {"type": "object", "additionalProperties": {
             "type": "object", "additionalProperties": False,
             "properties": {"var": {"type": "integer", "minimum": 0}, "const": {"type": "string"},
-                           "trim": {"type": "string", "maxLength": 8}}}}}},
+                           "trim": {"type": "string", "maxLength": 8},
+                           # masked values (int) joined with the fixed text between them (str)
+                           "parts": {"type": "array", "minItems": 2, "maxItems": 12,
+                                     "items": {"anyOf": [{"type": "integer", "minimum": 0},
+                                                         {"type": "string", "maxLength": 40}]}}}}}}},
 }
 LONGTAIL_FIELDS = ("timestamp", "host", "user", "src_ip", "dst_ip", "action", "outcome", "severity")
 
@@ -245,8 +251,10 @@ def validate_rule(kind: str, body: Any) -> None:
         if bad:
             raise RuleError(f"long-tail fields are limited to {LONGTAIL_FIELDS}; got {bad}")
         for k, v in body["fields"].items():
-            if ("var" in v) == ("const" in v):
-                raise RuleError(f"long-tail field {k}: give exactly one of var or const")
+            if sum(x in v for x in ("var", "const", "parts")) != 1:
+                raise RuleError(f"long-tail field {k}: give exactly one of var, const or parts")
+            if "parts" in v and not any(isinstance(p, int) for p in v["parts"]):
+                raise RuleError(f"long-tail field {k}: parts need at least one masked value")
 
 
 def kind_of(rule_id: str) -> str:
