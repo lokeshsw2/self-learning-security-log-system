@@ -185,9 +185,11 @@ def test_source_families_and_naming(tmp_path):
     assert len(keys) == 2 and all(k.startswith("-|json|-#f") for k in keys)   # two families, not one "json" source
     t = Tools(eng, "namer")
     okta = [k for k in keys if any("uuid" in r["raw"] for r in eng.store.raw_by_source(k)[:1])][0]
-    loose = {"vendor": "Okta", "product": "Okta System Log", "match": {"bucket": "^json\\\\|"}}
-    with pytest.raises(Refused, match="different name|only some|too loose") if False else pytest.raises(Refused):
-        t.save_source(okta, {**loose, "match": {"bucket": "^json\\\\|", "requires": ["Workload"]}})
+    loose = {"vendor": "Okta", "product": "Okta System Log", "match": {"bucket": "^json\\|"}}
+    with pytest.raises(Refused, match="did not list"):         # "any JSON" would name the other vendor too
+        t.save_source(okta, loose)
+    with pytest.raises(Refused, match="does not match"):       # a test that misses this source
+        t.save_source(okta, {**loose, "match": {"bucket": "^json\\|", "requires": ["Workload"]}})
     good = {"vendor": "Okta", "product": "Okta System Log", "match": {"bucket": "^json\\\\|", "requires": ["eventType", "uuid"]}}
     res = t.save_source(okta, good)
     assert res["named"] == [okta]
