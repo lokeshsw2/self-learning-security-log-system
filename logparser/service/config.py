@@ -36,7 +36,9 @@ class KafkaConfig:
     bootstrap: str = "127.0.0.1:19092"     # local test broker; production sets its own
     unparsed_topic: str = "logs.unparsed"
     parsed_topic: str = "logs.parsed"
+    replay_topic: str = "logs.replay"     # kept lines re-sent to Logstash when their format is first deployed
     group_id: str = "lp-learner"
+    logstash_group: str = "lp-logstash"   # the deployed pipelines' consumer group
     batch_max: int = 2000
     poll_timeout_s: float = 1.0
     create_topics: bool = False          # local testing only; production topics are managed elsewhere
@@ -63,13 +65,20 @@ class LearningConfig:
 @dataclass
 class LogstashConfig:
     variant: str = "compiled"            # "compiled" (rules -> Logstash) or "direct" (agents write filters)
-    config_dir: str = "work/service/logstash"
+    config_dir: str = "work/service/logstash"   # Logstash runs with --path.settings here and reloads on change
+    deploy: bool = True                   # compile, verify and deploy when the rules change
+    verify_per_group: int = 8             # stored lines per group in the verification run
+    verify_max_iter: int = 3
+    workers: int = 1
+    heap: str = "2g"
+    base_fallback: bool = False           # also deploy parsed groups with no mapping yet, as OCSF Base Event
 
 
 @dataclass
 class ClickHouseConfig:
     url: str = "http://localhost:8123"
     database: str = "logs"
+    ingest: bool = False                  # create the tables and the Kafka ingestion of the parsed topic
 
 
 @dataclass

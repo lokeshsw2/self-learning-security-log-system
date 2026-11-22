@@ -286,8 +286,12 @@ class Generated:
 
 # =================================================================== compiler
 class Compiler:
-    def __init__(self, engine):
+    def __init__(self, engine, base_fallback: bool = False):
+        """`base_fallback`: also compile groups that have a parser but no mapping yet, as the engine reads
+        them (OCSF Base Event through the default mapping), so their data reaches the event store before
+        a class mapping is learned."""
         self.e = engine
+        self.base_fallback = base_fallback
         self.snap = engine.snap
         self.schema = engine.schema
         self.tz = engine.deployment_tz()
@@ -600,10 +604,14 @@ class Compiler:
         try:
             if not g["parser_rule"] or not e.snap.rule(g["parser_rule"]):
                 raise Unsupported("no parser rule")
-            if not g["mapping_rule"]:
-                raise Unsupported("no mapping rule (engine falls back to the base event)")
+            mapping_rule = g["mapping_rule"]
+            if not mapping_rule:
+                if not self.base_fallback:
+                    raise Unsupported("no mapping rule (engine falls back to the base event)")
+                from .engine import DEFAULT_MAPPING
+                mapping_rule = DEFAULT_MAPPING
             pr = e.snap.rule(g["parser_rule"])["body"]
-            m = e._mapping(g["mapping_rule"])
+            m = e._mapping(mapping_rule)
             if m is None:
                 raise Unsupported("mapping rule missing")
             labels = g.get("labels") or {}
@@ -622,7 +630,7 @@ class Compiler:
                 conds.append(c2)
                 variants.append(self.compile_variant(sub, labels, typed, protected, leaf.gid))
             pv = (e.snap.rule(g["parser_rule"]) or {}).get("version", 0)
-            mv = (e.snap.rule(g["mapping_rule"]) or {}).get("version", 0)
+            mv = (e.snap.rule(mapping_rule) or {}).get("version", 0)
             meta = (f'event.set("[lp][group_id]", {rb(leaf.gid)}); event.set("[lp][source]", {rb(leaf.source.split("|")[0])}); '
                     f'event.set("[lp][parser_version]", {int(pv)}); event.set("[lp][mapping_version]", {int(mv)})')
             blocks = []
@@ -1077,14 +1085,36 @@ Leaf.included = False
 
 
 # =================================================================== assembling files
-def _read_sink_template(root: str) -> str:
-    path = os.path.join(root, "deploy", "logstash", "output-clickhouse.conf")
+def _read_sink_template(root: str, name: str = "output-clickhouse.conf") -> str:
+    path = os.path.join(root, "deploy", "logstash", name)
     with open(path) as fh:
         return fh.read()
 
 
+def kafka_io(bootstrap: str, topics: list, group_id: str, parsed_topic: str, root: str, extra: dict | None = None):
+    """Input and sink for the learning service: read the unparsed (and replay) topics, write each parsed
+    OCSF event, flattened to the ClickHouse columns, as JSON to the parsed topic. Lines no compiled group
+    parses are dropped here: the learner reads the unparsed topic itself."""
+    q = lambda v: json.dumps(str(v))
+    ex = "".join(f"\n  {k} => {q(v)}" for k, v in (extra or {}).items())
+    # the unparsed topic from the latest offset (the learner holds the lines that came before); the replay
+    # topic from the earliest, under its own group: its lines are sent when a format is deployed, before
+    # Logstash may have read it at all
+    def one(tops, group, reset):
+        return (f"kafka {{\n  bootstrap_servers => {q(bootstrap)}\n  topics => {json.dumps(tops)}\n  group_id => {q(group)}"
+                f"\n  codec => plain {{ charset => \"UTF-8\" }}\n  consumer_threads => 2\n  auto_offset_reset => {q(reset)}{ex}\n}}")
+    inp = one(topics[:1], group_id, "latest") + ("\n" + one(topics[1:], group_id + "-replay", "earliest") if topics[1:] else "")
+    ch = _read_sink_template(root)
+    flatten = ch[ch.index("filter {"):ch.index("\noutput {")]
+    sink = (flatten + "\nfilter {\n  if !(\"lp_unparsed\" in [tags]) {\n    ruby { code => 'event.set(\"valid\", 1); "
+            "event.set(\"ingest_id\", \"logstash\")' }\n  }\n}\n"
+            f"output {{\n  if !(\"lp_unparsed\" in [tags]) {{\n    kafka {{\n      bootstrap_servers => {q(bootstrap)}\n"
+            f"      topic_id => {q(parsed_topic)}\n      codec => json\n      compression_type => \"lz4\"{ex.replace(chr(10), chr(10) + '    ')}\n    }}\n  }}\n}}\n")
+    return inp, sink
+
+
 def write_set(gen: Generated, out_dir: str, *, root: str, test: dict | None = None, workers: int = 1,
-              dist_workers: int = 2, heap: str = "2g") -> dict:
+              dist_workers: int = 2, heap: str = "2g", io: tuple | None = None) -> dict:
     """Write distributor.conf, src_*.conf, sink.conf and pipelines.yml.
 
     Production: http input on 8088 and the ClickHouse sink template.  `test` (a dict with
@@ -1102,6 +1132,8 @@ def write_set(gen: Generated, out_dir: str, *, root: str, test: dict | None = No
     if test:
         inp = (f'file {{\n  path => "{test["input"]}"\n  mode => "read"\n  codec => "json"\n  sincedb_path => "/dev/null"\n'
                f'  file_completed_action => "log"\n  file_completed_log_path => "{test["input"]}.done"\n}}')
+    elif io:
+        inp = io[0]                     # e.g. kafka_io(): the service's topics
     else:
         inp = 'http {\n  port => 8088\n  codec => line\n}'
     outs = "".join(f'  if [@metadata][dest] == "{s}" {{\n    pipeline {{ send_to => ["{s}"] }}\n  }} else ' for s in slugs)
@@ -1119,6 +1151,8 @@ def write_set(gen: Generated, out_dir: str, *, root: str, test: dict | None = No
     if test:
         files["sink.conf"] = ('input { pipeline { address => "sink" } }\n'
                               f'output {{ file {{ path => "{test["output"]}" codec => json_lines }} }}\n')
+    elif io:
+        files["sink.conf"] = 'input { pipeline { address => "sink" } }\n' + io[1]
     else:
         files["sink.conf"] = 'input { pipeline { address => "sink" } }\n' + _read_sink_template(root)
     y = []

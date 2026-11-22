@@ -256,3 +256,43 @@ def test_config_secrets_and_validation(tmp_path, monkeypatch):
     p.write_text(json.dumps({"learning": {"interval_s": 0}}))
     with pytest.raises(ValueError, match="positive"):
         ServiceConfig.load(str(p))
+
+
+# --------------------------------------------------------------------- phase 2: deployment pieces
+def test_swap_in_rewrites_paths_and_removes_stale_pipelines(tmp_path):
+    from logparser.service.deploy import swap_in
+    live, staging = tmp_path / "live", tmp_path / "live.next"
+    live.mkdir(); staging.mkdir()
+    (live / "src_old.conf").write_text("old")
+    (staging / "distributor.conf").write_text(f'ruby {{ path => "{staging}/lp_lib.rb" }}')
+    (staging / "pipelines.yml").write_text(f'- pipeline.id: distributor\n  path.config: "{staging}/distributor.conf"\n')
+    moved = swap_in(str(staging), str(live))
+    assert moved[-1] == "pipelines.yml"                        # pipelines.yml goes in last
+    assert str(staging) not in (live / "pipelines.yml").read_text()
+    assert str(live) in (live / "distributor.conf").read_text()
+    assert not (live / "src_old.conf").exists() and not staging.exists()
+
+
+def test_kafka_io_reads_new_lines_live_and_replays_from_the_start():
+    from logparser import logstash as L
+    inp, sink = L.kafka_io("b:1", ["logs.unparsed", "logs.replay"], "lp-logstash", "logs.parsed", ROOT,
+                           extra={"security.protocol": "SSL"})
+    first, second = inp.split("\nkafka {")
+    assert '"logs.unparsed"' in first and 'auto_offset_reset => "latest"' in first
+    assert '"logs.replay"' in second and 'group_id => "lp-logstash-replay"' in second and '"earliest"' in second
+    assert 'topic_id => "logs.parsed"' in sink and "lp_unparsed" in sink and 'security.protocol => "SSL"' in inp
+
+
+def test_clickhouse_statements():
+    from logparser.service.clickhouse import statements
+    sts = statements("lpsvc", "b:1", "logs.parsed", "g")
+    assert any("ENGINE = Kafka" in s and "'logs.parsed'" in s for s in sts)
+    assert any("MATERIALIZED VIEW" in s and "lpsvc.ocsf_events" in s for s in sts)
+    assert not any("logs.ocsf_events" in s for s in sts)
+    with pytest.raises(ValueError):
+        statements("bad;name", "b:1", "t", "g")
+
+
+def test_sink_time_is_exact_to_the_millisecond():
+    text = open(os.path.join(ROOT, "deploy", "logstash", "output-clickhouse.conf")).read()
+    assert "t / 1000.0" not in text and "(ti % 1000) * 1000" in text

@@ -75,8 +75,9 @@ def resolve_new(eng, det, sg):
     return None
 
 
-def truth(eng, raw: str) -> dict:
-    """What the engine does with one line: its group and event, or why there is none."""
+def truth(eng, raw: str, base_events: bool = False) -> dict:
+    """What the engine does with one line: its group and event, or why there is none. `base_events`: a
+    Base Event from the default mapping counts as an event (the compiler's base_fallback deploys those)."""
     from logparser.reader import Record
     rec = Record("lsverify", 0, text=raw)
     try:
@@ -99,7 +100,7 @@ def truth(eng, raw: str) -> dict:
         return {"kind": "noparser", "gid": g["signature"]}
     if res["status"] == "dlq":
         return {"kind": "parse_fail", "gid": g["signature"]}
-    if not res.get("event") or res["mapping_rule"] == "mapping:default-base":
+    if not res.get("event") or (res["mapping_rule"] == "mapping:default-base" and not base_events):
         return {"kind": "base", "gid": g["signature"]}
     return {"kind": "event", "gid": g["signature"], "event": res["event"], "source": g["source"], "via": via}
 
@@ -136,7 +137,7 @@ def diff(a, b, path="", out=None, limit=6):
 
 
 # ------------------------------------------------------------------ test set
-def build_lines(eng, db: str, per_group: int, mixed: int, seed: int = 7) -> list:
+def build_lines(eng, db: str, per_group: int, mixed: int, seed: int = 7, base_events: bool = False) -> list:
     import sqlite3
     con = sqlite3.connect(db)
     rnd = random.Random(seed)
@@ -165,7 +166,7 @@ def build_lines(eng, db: str, per_group: int, mixed: int, seed: int = 7) -> list
             raw = line.decode("utf-8", "replace")
             lines.append({"id": len(lines), "raw": raw, "origin": "mixed"})
     for ln in lines:
-        ln["truth"] = truth(eng, ln["raw"])
+        ln["truth"] = truth(eng, ln["raw"], base_events)
     return lines
 
 
