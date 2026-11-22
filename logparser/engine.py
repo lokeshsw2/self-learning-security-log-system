@@ -804,6 +804,8 @@ class Engine:
     # ------------------------------------------------------------ end of batch
     def _after_batch(self, final: bool = False) -> None:
         s = self.settings
+        if s.retain_parsed or s.retain_unparsed:
+            self.store.prune(s.retain_parsed, s.retain_unparsed)
         for sig in list(self._dirty_groups):
             g = self.groups.get(sig)
             if not g or g["merged_into"]:

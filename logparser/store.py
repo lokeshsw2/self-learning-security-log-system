@@ -292,6 +292,20 @@ class SqliteStore(Store):
             "SELECT id, raw, status, stream, offset, source, signature FROM raw WHERE source=? AND blob IS NULL ORDER BY id",
             (source,))]
 
+    def prune(self, keep_parsed: int, keep_unparsed: int) -> int:
+        """Keep the newest lines per signature; drop older rows and their events. Samples keep their own copies."""
+        dropped = 0
+        for status_sql, keep in (("status='parsed'", keep_parsed), ("status<>'parsed'", keep_unparsed)):
+            if keep <= 0:
+                continue
+            cur = self.db.execute(
+                f"DELETE FROM raw WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER "
+                f"(PARTITION BY signature ORDER BY id DESC) rn FROM raw WHERE {status_sql}) WHERE rn > ?)", (keep,))
+            dropped += cur.rowcount
+        if dropped:
+            self.db.execute("DELETE FROM events WHERE raw_id NOT IN (SELECT id FROM raw)")
+        return dropped
+
     def put_events(self, rows: list[tuple]) -> None:
         self.db.executemany("INSERT OR REPLACE INTO events(raw_id,signature,fields,ocsf,class_uid,valid,errors,"
                             "parser_rule,mapping_rule,tags,parser_version,mapping_version) "

@@ -267,3 +267,13 @@ def test_remask_joins_a_group_that_another_source_already_owns(tmp_path):
     assert [g["signature"] for g in live] == [owner["signature"]]              # one group, the owner kept its id
     assert set(eng.store.signature_map().values()) == {owner["signature"]}
     assert eng.store.q("SELECT COUNT(*) n FROM raw WHERE status='parsed'")[0]["n"] == 18   # the odd lines use its parser
+
+
+def test_storage_is_bounded_per_signature(tmp_path):
+    eng = make(tmp_path, auto_repair=False, retain_parsed=5, retain_unparsed=7)
+    lines = [f"Jan  1 00:00:{i % 60:02d} h app[1]: job {i} finished in {i}ms" for i in range(120)]
+    feed(eng, tmp_path, lines, name="a.log", label="hosts")
+    assert eng.store.q("SELECT COUNT(*) n FROM raw")[0]["n"] <= 7          # unparsed window per signature
+    g = eng.store.groups("merged_into IS NULL")[0]
+    assert g["count"] == 120                                                # the counters keep the true volume
+    assert len(eng.store.samples(g["signature"])) > 0                       # samples keep their own copies

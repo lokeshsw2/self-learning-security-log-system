@@ -55,6 +55,10 @@ class Settings:
     default_tz: str = "auto"            # "auto": the offset of most zoned timestamps seen, else UTC
     max_line_len: int = 65536
     keep_raw_data: bool = False
+    # bounded storage: the database keeps a recent window per raw signature, not every line.
+    # Events belong in the event store (ClickHouse); the full stream stays in Kafka. 0 = keep all.
+    retain_parsed: int = 0              # newest parsed lines (and their events) kept per signature
+    retain_unparsed: int = 0            # pending/unparsed lines kept per signature until a rule arrives
     ocsf_version: str = "1.10.0"
     # Long-tail agent daily budget (calls).
     longtail_daily_budget: int = 200
