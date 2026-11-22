@@ -54,13 +54,18 @@ Captions (status, activity_name, severity, ...) are added by code from the ids. 
 map go to `unmapped`.
 
 The check (code, on the samples and up to 32 other stored lines; every line must pass)
-- no step failed on the line; a schema-valid event of the class (required attributes present)
+- no step failed on the line, and the extraction made fields; a field a step reads must exist
+- every `from` field of a map entry exists on the line (put `when` {"field": f, "exists": true} on entries
+  for fields only some lines have)
+- a schema-valid event of the class (required attributes present)
 - every string value copied into the event appears in that line (constants and dictionary results excepted)
 - the event time comes from the line, and matches the line's own timestamp
 - text formats: the filter reads no line of the other groups of the same format (they are tried in turn);
   make the extraction specific with the literal words of this group (e.g. TCP_DENIED vs TCP_HIT)
 - words such as failed / denied / blocked in the line agree with status_id / action_id / disposition_id
 
-Values in quotes: a value may contain " or ' but not both; inside patterns write \x22 or \x27.
+Values: a value may contain " or ' but not both (inside patterns write \x22 or \x27); no line breaks,
+no `${`, no trailing backslash. dissect keys are plain names (%{} skips text). The first extract step has no
+`when`.
 Map only what the line says. If a line holds several events, or the group mixes event types that need
 different classes, use `when` on map entries, or FLAG with the reason.

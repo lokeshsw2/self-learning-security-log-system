@@ -620,8 +620,8 @@ class Compiler:
             cname = self.schema.cls(body["class"])["name"]
             self.caps_need.setdefault(body["class"], set()).update(self.schema.cls(cname)["attributes"])
             leaf.status, leaf.reason = "ok", ""
-        except (Unsupported, lsdirect.FilterError) as ex:
-            leaf.status, leaf.reason = "unsupported", str(ex)
+        except Exception as ex:               # a bad saved rule leaves out its group, never the deploy
+            leaf.status, leaf.reason = "unsupported", f"{type(ex).__name__}: {ex}"[:300]
 
     def direct_block(self, r: Root) -> str | None:
         """Structured root, Variant B: the agent's extraction, then (unless a step failed) the rest."""

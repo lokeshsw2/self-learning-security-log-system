@@ -8,6 +8,8 @@ JVM start). One test at a time.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 import re
@@ -22,6 +24,8 @@ from .logstash import rb
 from .logstash_rb import RUBY_LIB
 
 BREW = "/opt/homebrew/Cellar/logstash"
+# Logstash substitutes ${VAR} from its environment: the sandbox gets only what a JVM needs, no secrets
+ENV_KEEP = ("PATH", "HOME", "JAVA_HOME", "LS_JAVA_HOME", "TMPDIR", "LANG", "LC_ALL", "USER")
 
 
 def caps_for(schema, cname: str) -> dict:
@@ -95,8 +99,9 @@ class Sandbox:
                     with open(os.path.join(self.dir, name), "w") as fh:
                         fh.write(txt)
         log = open(os.path.join(self.dir, "stdout.log"), "w")
+        env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
         self.proc = subprocess.Popen([self.bin, "--path.settings", self.dir], stdout=log, stderr=subprocess.STDOUT,
-                                     start_new_session=True)
+                                     start_new_session=True, env=env)
         with open(os.path.join(self.dir, "sandbox.pid"), "w") as fh:
             fh.write(str(self.proc.pid))
         t0 = time.time()
@@ -106,6 +111,7 @@ class Sandbox:
             if self.proc.poll() is not None:
                 raise RuntimeError(f"sandbox Logstash exited; see {self.dir}/stdout.log")
             time.sleep(1)
+        self.stop()
         raise RuntimeError("sandbox Logstash did not start in time")
 
     def _ours(self) -> bool:
@@ -192,11 +198,33 @@ class Sandbox:
     def run(self, filter_text: str, records: list, tables: dict, tz: str = "UTC", timeout: float = 60.0) -> dict:
         """Load the filter, send the records ({id, payload, h}), return {"events": {id: event}} or
         {"error": reload error}. `tables` are the caption tables (`T_sb`)."""
-        with self.lock:
+        with self.lock, self._file_lock():
+            run_id = uuid.uuid4().hex[:10]
+            try:
+                return self._run(filter_text, records, tables, tz, timeout, run_id)
+            finally:
+                for p in (os.path.join(self.dir, f"out_{run_id}.jsonl"), os.path.join(self.dir, f"tables_{run_id}.json")):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+
+    @contextlib.contextmanager
+    def _file_lock(self):
+        """One test at a time across processes too (they share the ports and sandbox.conf)."""
+        os.makedirs(self.dir, exist_ok=True)
+        with open(os.path.join(self.dir, ".lock"), "w") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+
+    def _run(self, filter_text, records, tables, tz, timeout, run_id) -> dict:
+        if True:        # (indentation kept from the locked block)
             self.start()
             before = self._stats()
             since = self._log_size()
-            run_id = uuid.uuid4().hex[:10]
             out = self._write_conf(filter_text, json.dumps(tables), run_id, tz)
             t0 = time.time()
             while time.time() - t0 < 40:
@@ -241,9 +269,4 @@ class Sandbox:
                 err = self._log_error(since)
                 if err:
                     return {"events": events, "ruby_error": err[:500]}
-            for p in (out, os.path.join(self.dir, f"tables_{run_id}.json")):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
             return {"events": events}

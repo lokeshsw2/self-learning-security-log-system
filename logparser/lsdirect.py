@@ -66,6 +66,12 @@ def lit(s) -> str:
     """A Logstash string literal. Logstash processes no escapes by default, so a value may hold one kind of
     quote but not both (use \\x22 / \\x27 inside regular expressions)."""
     s = str(s)
+    if "${" in s:
+        raise FilterError(f"a value may not contain '${{' (Logstash substitutes environment variables): {s[:60]!r}")
+    if any(c in s for c in "\n\r\x00"):
+        raise FilterError(f"a value may not contain line breaks or NUL: {s[:60]!r}")
+    if s.endswith("\\"):
+        raise FilterError(f"a value may not end with a backslash: {s[:60]!r}")
     if '"' not in s:
         return f'"{s}"'
     if "'" not in s:
@@ -84,8 +90,9 @@ def _cond(w: dict | None) -> str | None:
     if "equals" in w:
         return f"{r} == {lit(w['equals'])}"
     if "matches" in w:
-        if "/" in str(w["matches"]):
-            raise FilterError("`matches`: no / in the pattern (use \\x2f)")
+        m = str(w["matches"])
+        if "/" in m or m.endswith("\\") or "${" in m or any(c in m for c in "\n\r\x00"):
+            raise FilterError("`matches`: no /, line break, ${ or trailing backslash (use \\x2f for /)")
         return f"{r} =~ /{w['matches']}/"
     raise FilterError("`when` needs exists, equals or matches")
 
@@ -101,14 +108,25 @@ def validate(body: dict, schema) -> None:
     if cls is None:
         raise FilterError(f"unknown OCSF class {body.get('class')!r}")
     steps = body.get("extract") or []
-    if not isinstance(steps, list) or len(steps) > MAX_STEPS:
-        raise FilterError(f"extract: a list of at most {MAX_STEPS} steps")
+    if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_STEPS:
+        raise FilterError(f"extract: a list of 1 to {MAX_STEPS} steps")
+    if isinstance(steps[0], dict) and isinstance(next(iter(steps[0].values()), None), dict) \
+            and next(iter(steps[0].values())).get("when"):
+        raise FilterError("the first extract step runs on every line: no `when` on it")
     for i, st in enumerate(steps):
         if isinstance(st, dict) and len(st) == 1 and next(iter(st)) in ("json", "xml") and i > 0:
             raise FilterError("json and xml replace the parsed fields: put them first")
         if not isinstance(st, dict) or len(st) != 1 or next(iter(st)) not in PLUGINS:
             raise FilterError(f"extract step {st!r}: one of {sorted(PLUGINS)}")
         (plugin, opts), = st.items()
+        if not isinstance(opts, dict):
+            raise FilterError(f"{plugin}: options are an object")
+        for k in ("patterns", "include_keys", "columns"):
+            if k in opts and not (isinstance(opts[k], list) and all(isinstance(x, str) for x in opts[k])):
+                raise FilterError(f"{plugin}.{k}: a list of strings")
+        for k in ("pattern_definitions", "xpath"):
+            if k in opts and not (isinstance(opts[k], dict) and all(isinstance(x, str) for x in opts[k].values())):
+                raise FilterError(f"{plugin}.{k}: an object of strings")
         bad = set(opts) - OPTIONS[plugin]
         if bad:
             raise FilterError(f"{plugin}: options {sorted(bad)} are not allowed; allowed: {sorted(OPTIONS[plugin])}")
@@ -116,8 +134,13 @@ def validate(body: dict, schema) -> None:
         _cond(opts.get("when"))
         if plugin == "grok" and not opts.get("patterns"):
             raise FilterError("grok needs patterns")
-        if plugin == "dissect" and not opts.get("mapping"):
-            raise FilterError("dissect needs mapping")
+        if plugin == "dissect":
+            if not isinstance(opts.get("mapping"), str) or not opts["mapping"]:
+                raise FilterError("dissect needs mapping (a string)")
+            for k in re.findall(r"%\{([^}]*)\}", opts["mapping"]):
+                if k and not NAME.match(k):
+                    raise FilterError(f"dissect key %{{{k}}}: plain field names only (no modifiers, brackets "
+                                      f"or ->); use %{{}} to skip text")
         if plugin == "csv" and not opts.get("columns"):
             raise FilterError("csv needs columns")
     t = body.get("time")
@@ -142,7 +165,8 @@ def validate(body: dict, schema) -> None:
             ref(m["from"])
         if m.get("convert") is not None and m["convert"] not in CONVERT:
             raise FilterError(f"map.to {to!r}: convert is one of {sorted(CONVERT)}")
-        if "translate" in m and (not isinstance(m["translate"], dict) or "from" not in m):
+        if "translate" in m and (not isinstance(m["translate"], dict) or "from" not in m or not all(
+                isinstance(v, (str, int, float)) and not isinstance(v, bool) for v in m["translate"].values())):
             raise FilterError(f"map.to {to!r}: translate is an inline dictionary on a `from` field")
         _cond(m.get("when"))
 
@@ -167,7 +191,7 @@ def render_steps(body: dict, default_tz: str | None = None) -> str:
         if plugin == "grok":
             pats = "[" + ", ".join(lit(p) for p in o["patterns"]) + "]"
             extra = f"\n  pattern_definitions => {_hash(o['pattern_definitions'])}" if o.get("pattern_definitions") else ""
-            text = (f"grok {{\n  match => {{ {lit(src)} => {pats} }}\n  target => {lit(F)}{extra}\n"
+            text = (f"grok {{\n  match => {{ {lit(src)} => {pats} }}\n  target => {lit(F)}{extra}\n  timeout_millis => 1000\n"
                     f"  tag_on_failure => [\"_lp_grokfail\"]\n}}")
         elif plugin == "dissect":
             # dissect writes plain names; they become parsed fields through the %{[...]} form
@@ -192,7 +216,12 @@ def render_steps(body: dict, default_tz: str | None = None) -> str:
             sep = f"\n  separator => {lit(o['separator'])}" if "separator" in o else ""
             q = f"\n  quote_char => {lit(o['quote_char'])}" if "quote_char" in o else ""
             text = f"csv {{\n  source => {lit(src)}\n  target => {lit(F)}\n  columns => {cols}{sep}{q}\n  tag_on_failure => [\"_lp_csvfail\"]\n}}"
+        if src != "[@metadata][s][payload]":
+            text = f"if ![{src[1:-1]}] {{\n  mutate {{ add_tag => [\"_lp_nofield\"] }}\n}} else {{\n" + \
+                   "\n".join("  " + l for l in text.splitlines()) + "\n}"
         out.append(_wrap(_cond(o.get("when")), text))
+    # an extraction that made no field (steps skipped, nothing matched) fails too
+    out.append("ruby { code => 'f = event.get(\"[@metadata][s][f]\"); event.tag(\"_lp_noextract\") if !f.is_a?(Hash) || f.empty?' }")
     out.append(MAP_MARK)
     t = body.get("time")
     if t:
@@ -239,9 +268,10 @@ def finisher_cfg(body: dict, schema, labels: dict) -> dict:
             "unmapped": "rest", "drop": [], "cname": body["class"]}
 
 
-FAIL_COND = " or ".join(f'"{t}" in [tags]' for t in ("_lp_grokfail", "_lp_dissectfail", "_lp_kvfail", "_lp_jsonfail",
-                                                       "_lp_csvfail", "_xmlparsefailure"))
-FAIL_TAG_LIST = '["_lp_grokfail", "_lp_dissectfail", "_lp_kvfail", "_lp_jsonfail", "_lp_csvfail", "_xmlparsefailure"]'
+_FAILS = ("_lp_grokfail", "_lp_dissectfail", "_lp_kvfail", "_lp_jsonfail", "_lp_csvfail", "_xmlparsefailure",
+          "_lp_nofield", "_lp_noextract", "_grokparsefailure", "_dissectfailure")
+FAIL_COND = " or ".join(f'"{t}" in [tags]' for t in _FAILS)
+FAIL_TAG_LIST = "[" + ", ".join(f'"{t}"' for t in _FAILS) + "]"
 
 
 def render_parts(body: dict, schema, labels: dict, gid: str, table_var: str, versions: tuple = (1, 1),
@@ -255,6 +285,8 @@ def render_parts(body: dict, schema, labels: dict, gid: str, table_var: str, ver
            "t = event.get(\"[@metadata][s][t]\")\n"
            "o[\"time\"] = (t.to_f * 1000).round if t\n"
            f"LP.fin(event, o, f, {rb(used)}, {rb(cfg)}, {table_var})\n"
+           "if event.get(\"tags\").to_a.include?(\"_lp_datefail\") then event.tag(\"lp_unparsed\"); "
+           "event.set(\"[lp][reason]\", \"time_failed\") end\n"
            f"event.set(\"[lp][group_id]\", {rb(gid)}); event.set(\"[lp][source]\", {rb(source)}); "
            f"event.set(\"[lp][parser_version]\", {int(versions[0])}); "
            f"event.set(\"[lp][mapping_version]\", {int(versions[1])}); event.set(\"[lp][writer]\", \"direct\")")
@@ -272,7 +304,8 @@ def render_group(body: dict, schema, labels: dict, gid: str, table_var: str, ver
 
 
 # ======================================================================= gate
-FAIL_TAGS = {"_lp_grokfail": "grok", "_lp_dissectfail": "dissect", "_lp_kvfail": "kv", "_lp_jsonfail": "json",
+FAIL_TAGS = {"_lp_nofield": "source-field", "_lp_noextract": "extraction (no field was made)",
+             "_grokparsefailure": "grok", "_dissectfailure": "dissect", "_lp_grokfail": "grok", "_lp_dissectfail": "dissect", "_lp_kvfail": "kv", "_lp_jsonfail": "json",
              "_lp_csvfail": "csv", "_lp_datefail": "date", "_xmlparsefailure": "xml", "_rubyexception": "ruby"}
 
 
@@ -304,6 +337,23 @@ def judge(schema, det, raw: str, out: dict, body: dict) -> list:
             probs.append(f"value: event `{p}` = {v!r} is not in this line")
     sb = out.get("sb") or {}
     fields = {k: v for k, v in (sb.get("f") or {}).items() if isinstance(v, (str, int, float))}
+    if sb.get("f") is not None:            # the sandbox shows the parsed fields; the deploy check does not
+        allf = sb.get("f") or {}
+
+        def has(name):
+            cur = allf
+            for p in name.split("."):
+                if not isinstance(cur, dict) or p not in cur:
+                    return False
+                cur = cur[p]
+            return cur not in (None, "")
+        for m in body.get("map") or []:
+            if "from" in m and not m.get("when") and "fallback" not in m and not has(m["from"]):
+                probs.append(f"map: `{m['from']}` (for {m['to']}) is missing on this line; give `when` if it is "
+                             f"optional")
+        for k, v in fields.items():
+            if not k.startswith("@") and isinstance(v, str) and not audit._present(v, raw):
+                probs.append(f"value: parsed field `{k}` = {v!r} is not in this line")
     ctags = [] if sb.get("t") else ["time_from_ingest"]
     probs += checks.problems(det, {k: v for k, v in fields.items() if isinstance(v, str)}, ev, ctags, {})
     return probs
@@ -363,6 +413,8 @@ def run_test(tools, sandbox, group: str, body: dict, labels: dict | None = None)
         text = render_group(body, e.schema, lab, g["signature"], "T_sb", tz=e.deployment_tz())
     except FilterError as exc:
         return {"ok": False, "error": str(exc)}
+    except Exception as exc:              # a malformed shape the checks did not foresee
+        return {"ok": False, "error": f"rule is not well formed: {exc!r}"[:400]}
     from .sandbox import tables_for
     samples, hold = records(tools, g)
     foreign = foreign_records(tools, g, len(samples) + len(hold))

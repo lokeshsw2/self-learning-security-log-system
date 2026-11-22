@@ -126,8 +126,9 @@ TOOLSETS["ls-direct"] = [
     *[t for t in TOOLSETS["ocsf-mapping"] if t["name"] in ("search_ocsf", "get_class", "get_object", "get_attribute",
                                                           "fetch_vendor_docs")],
     _tool("test_lsfilter", "Render the filter to Logstash config, load it into a running Logstash, send the samples "
-          "and other stored lines of the group, and check every event: no failed step, schema-valid, every copied "
-          "value in its line, time from the line, outcome consistent. Shows the parsed fields and event of the "
+          "and other stored lines of the group, and check every event: no failed step, every mapped field present, schema-valid, "
+          "every copied value in its line (constants excepted: they must be true for every line), time from the "
+          "line, outcome consistent, no line of another group read. Shows the parsed fields and event of the "
           "first line. Changes nothing.", {"group": S, "rule": LSFILTER, "labels": LABELS}, ["group", "rule"]),
     _tool("save_lsfilter", "Save the filter. Accepted only if every tested line passes.",
           {"group": S, "rule": LSFILTER, "labels": LABELS, "note": S}, ["group", "rule", "labels"]),

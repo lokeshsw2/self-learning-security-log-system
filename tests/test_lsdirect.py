@@ -72,9 +72,12 @@ GOOD_EVENT = {"class_uid": 3002, "category_uid": 3, "activity_id": 1, "type_uid"
               "service": {"name": "sshd"}}
 
 
+F1 = {"user": "root", "src_ip": "173.234.31.1", "src_port": "3001", "@app": "sshd"}
+
+
 def test_judge_finds_failed_steps_values_and_ingest_time():
     raw = SSH[0]
-    ok = {"ocsf": GOOD_EVENT, "sb": {"t": "x", "f": {}}}
+    ok = {"ocsf": GOOD_EVENT, "sb": {"t": "x", "f": F1}}
     assert D.judge(SCHEMA, _det(), raw, ok, RULE) == []
     bad = {"ocsf": {**GOOD_EVENT, "user": {"name": "admin"}}, "sb": {"t": "x"}, "tags": ["_lp_grokfail"]}
     probs = D.judge(SCHEMA, _det(), raw, bad, RULE)
@@ -103,7 +106,8 @@ class FakeSandbox:
 def _ssh_event(r):
     ip = r["payload"].split(" from ")[1].split(" ")[0]
     port = int(r["payload"].split(" port ")[1].split(" ")[0])
-    return {"ocsf": {**GOOD_EVENT, "src_endpoint": {"ip": ip, "port": port}}, "sb": {"t": "x", "f": {}}}
+    return {"ocsf": {**GOOD_EVENT, "src_endpoint": {"ip": ip, "port": port}},
+            "sb": {"t": "x", "f": {"user": "root", "src_ip": ip, "src_port": str(port), "@app": "sshd"}}}
 
 
 @pytest.fixture
@@ -223,3 +227,37 @@ def test_real_sandbox(ssh, tmp_path):
     finally:
         sb.stop()
         Tools.sandbox = None
+
+
+@pytest.mark.parametrize("bad, words", [
+    ({"map": [{"to": "user.name", "value": "${ANTHROPIC_API_KEY}"}]}, "environment"),
+    ({"extract": [{"grok": {"patterns": ["x\\"]}}]}, "backslash"),
+    ({"extract": [{"grok": {"patterns": ["a\nb"]}}]}, "line breaks"),
+    ({"extract": [{"dissect": {"mapping": "%{+[ocsf][class_uid]} %{*k}=%{&k}"}}]}, "plain field names"),
+    ({"extract": []}, "1 to"),
+    ({"extract": [{"grok": {"patterns": ["x"], "when": {"field": "a", "exists": True}}}]}, "first extract step"),
+    ({"extract": [{"grok": 5}]}, "options are an object"),
+    ({"map": [{"to": "user.name", "from": "u", "translate": {"a": {"b": 1}}}]}, "translate"),
+])
+def test_review_injection_cases_are_refused(bad, words):
+    body = {**RULE, **bad}
+    with pytest.raises(D.FilterError, match=words):
+        D.validate(body, SCHEMA)
+        D.render_steps(body)
+
+
+def test_missing_mapped_field_and_skipped_steps_fail():
+    out = {"ocsf": GOOD_EVENT, "sb": {"t": "x", "f": {"user": "root", "src_ip": "173.234.31.1"}}}
+    probs = D.judge(SCHEMA, _det(), SSH[0], out, RULE)
+    assert any("`src_port`" in p and "missing" in p for p in probs)
+    txt = D.render_steps({**RULE, "extract": [{"grok": {"patterns": ["x"]}}, {"kv": {"field": "rest"}}]})
+    assert 'add_tag => ["_lp_nofield"]' in txt and "_lp_noextract" in txt and "timeout_millis => 1000" in txt
+    assert "_lp_noextract" in D.FAIL_COND and "_lp_nofield" in D.FAIL_TAG_LIST
+    _, rest = D.render_parts(RULE, SCHEMA, {}, "g", "T")
+    assert 'event.tag(\\"lp_unparsed\\")' in rest or "lp_unparsed" in rest          # a failed date is not ingest time
+
+
+def test_sandbox_environment_has_no_secrets(monkeypatch):
+    from logparser import sandbox
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert "ANTHROPIC_API_KEY" not in sandbox.ENV_KEEP and all("KEY" not in k for k in sandbox.ENV_KEEP)
