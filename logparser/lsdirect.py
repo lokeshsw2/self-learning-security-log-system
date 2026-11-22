@@ -556,7 +556,7 @@ def verify_judge(e, lines: list, events: dict, included: set, now_ms: int) -> di
             else:
                 rule = e.snap.rule("lsfilter:" + exp)
                 ocsf = ev.get("ocsf") or {}
-                out = {"tags": ev.get("tags"), "ocsf": ocsf, "sb": {"t": ocsf.get("time") != now_ms, "f": {}}}
+                out = {"tags": ev.get("tags"), "ocsf": ocsf, "sb": {"t": ocsf.get("time") != now_ms, "f": None}}   # no parsed fields at deploy
                 probs = judge(e.schema, ln["det"], ln["raw"], out, rule["body"] if rule else {})
                 if probs:
                     counts["problem"] += 1

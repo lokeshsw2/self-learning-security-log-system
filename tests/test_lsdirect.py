@@ -261,3 +261,22 @@ def test_sandbox_environment_has_no_secrets(monkeypatch):
     from logparser import sandbox
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert "ANTHROPIC_API_KEY" not in sandbox.ENV_KEEP and all("KEY" not in k for k in sandbox.ENV_KEEP)
+
+
+def test_deploy_check_passes_a_good_event_without_parsed_fields(ssh):
+    """The deploy run has no [@metadata] (so no parsed fields): field checks must not count that as missing."""
+    eng, gid = ssh
+    registry.save_rule(eng.store, "lsfilter:" + gid, RULE)
+    eng.reload()
+    lines = D.verify_lines(eng, {gid}, per_group=8)
+    mine = [l for l in lines if l["expect"] == gid]
+    assert mine
+    now = 1795000000000
+    events = {}
+    for l in mine:
+        ev = _ssh_event({"payload": l["raw"].split(": ", 1)[1]})
+        events[l["id"]] = {"ocsf": ev["ocsf"], "lp": {"group_id": gid}, "tags": []}
+    res = D.verify_judge(eng, lines, events, {gid}, now)
+    assert res["exclude"] == {} and res["counts"]["ok"] == len(mine), res
+    events[mine[0]["id"]]["ocsf"] = {**events[mine[0]["id"]]["ocsf"], "time": now}      # ingest time
+    assert gid in D.verify_judge(eng, lines, events, {gid}, now)["exclude"]
