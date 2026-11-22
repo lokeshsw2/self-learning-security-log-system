@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS samples (
   tag TEXT NOT NULL DEFAULT 'diverse',      -- diverse | recent | failure | value:<field>=<value>
   masked TEXT, PRIMARY KEY (signature, raw_id));
 
+CREATE TABLE IF NOT EXISTS families (
+  id TEXT PRIMARY KEY, bucket TEXT NOT NULL, keys TEXT NOT NULL, n INTEGER NOT NULL, label TEXT);
+CREATE TABLE IF NOT EXISTS family_keys (keyhash TEXT PRIMARY KEY, family_id TEXT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS group_stats (group_id TEXT PRIMARY KEY, stats TEXT NOT NULL);
 
 CREATE TABLE IF NOT EXISTS decisions (

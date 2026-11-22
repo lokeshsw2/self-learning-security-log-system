@@ -54,6 +54,8 @@ class Engine:
         self._new_unstructured: set = set()
         self._queue_ops: list = []
         self._new_sigs: list = []           # (signature, group id) rows to persist
+        from .family import Families
+        self.families = Families(store, self.settings.family_threshold)
         self._dirty_stats: set = set()
         self._load()
 
@@ -585,6 +587,15 @@ class Engine:
                 c[2] = repr(exc)[:300]
 
     # ------------------------------------------------------------ the batch
+    def _family_of(self, det: Detection, flat: dict):
+        from .family import STRUCTURED, keyset
+        if det.app or det.format not in STRUCTURED or not flat:
+            return None
+        return self.families.assign(det.bucket, keyset(det.format, flat, det.delimiter))
+
+    def _sign(self, det: Detection, label: str | None, cols, snap=None) -> signature.Signed:
+        return signature.sign(snap or self.snap, det, label, cols, self._family_of)
+
     def analyse(self, rec: Record):
         """Detection and signature for one record (shared by process and tools)."""
         det = detect(self.snap, rec.text)
@@ -641,6 +652,9 @@ class Engine:
                 stats["directive"] += 1
                 continue
             det, source, cols = self.analyse(rec)
+            sg = self._sign(det, rec.label, cols)
+            if sg.family:
+                source = f"{source}#{sg.family}"
             src = self._source(source)
             src["lines"] += 1
             self._dirty_sources.add(source)
@@ -648,7 +662,6 @@ class Engine:
                 put(None, "quarantined", source)
                 stats["quarantined"] += 1
                 continue
-            sg = signature.sign(self.snap, det, rec.label, cols)
             if sg.error:
                 put(sg.signature, "dlq", source)
                 dlq_rows.append((rid, "decode", sg.error[:300], sg.signature, self.batch_no))
@@ -722,6 +735,7 @@ class Engine:
             g = self.groups.get(sig)
             if g and g["_samples"] is not None:
                 self.store.replace_samples(sig, g["_samples"])
+        self.families.flush()
         if self._new_sigs:
             self.store.put_signatures(self._new_sigs)
             self._new_sigs = []
@@ -1019,7 +1033,7 @@ class Engine:
                 if rec.label == "-":
                     rec.label = None
                 det, source, cols = self.analyse(rec)
-                sg = signature.sign(self.snap, det, rec.label, cols)
+                sg = self._sign(det, rec.label, cols)
                 res = self.parse_record(g, det, sg, rec)
                 if restat:
                     self._stat(g, res["fields"] if res["status"] == "parsed" else
@@ -1076,7 +1090,7 @@ class Engine:
             rec = Record(r["stream"], r["offset"], text=r["raw"], label=None if label == "-" else label,
                          columns=self._header_of(self.groups[top(r["signature"])]) if g0 and top(r["signature"]) else None)
             det, _, cols = self.analyse(rec)
-            sg = signature.sign(self.snap, det, rec.label, cols)
+            sg = self._sign(det, rec.label, cols)
             if sg.error:
                 continue
             e = plan.setdefault(sg.signature, {"rows": [], "from": Counter(), "det": det, "sg": sg, "cols": cols})

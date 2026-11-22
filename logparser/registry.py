@@ -28,7 +28,8 @@ from . import rx, transforms
 from .store import SqliteStore
 
 SCOPE = {"type": "object", "additionalProperties": False,
-         "properties": {"bucket": {"type": "string"}, "stream": {"type": ["string", "null"]}}}
+         "properties": {"bucket": {"type": "string"}, "stream": {"type": ["string", "null"]},
+                        "family": {"type": "string"}}}
 STR_LIST = {"type": "array", "items": {"type": "string"}}
 TRANSFORM = {"type": "object", "required": ["fn"], "additionalProperties": False,
              "properties": {"fn": {"type": "string"}, "args": {"type": "object"}}}
@@ -359,7 +360,9 @@ class Snapshot:
         self._sign_cache: dict[tuple, dict] = {}
 
     @staticmethod
-    def _in_scope(scope: dict, bucket: str, stream: str | None) -> bool:
+    def _in_scope(scope: dict, bucket: str, stream: str | None, family: str | None = None) -> bool:
+        if scope.get("family") and scope["family"] != family:
+            return False
         # A rule learned on a labelled stream also applies to unlabelled lines of the same
         # content bucket (a mixed topic with no source header); it never crosses to a
         # stream that carries a different label.
@@ -368,12 +371,12 @@ class Snapshot:
         b = scope.get("bucket", "*")
         return b == "*" or rx.compile(b).search(bucket) is not None
 
-    def mask_patterns(self, bucket: str, stream: str | None) -> list[dict]:
-        key = (bucket, stream)
+    def mask_patterns(self, bucket: str, stream: str | None, family: str | None = None) -> list[dict]:
+        key = (bucket, stream, family)
         if key not in self._mask_cache:
             pats: list[dict] = []
             for r in self.masks:  # highest priority first
-                if self._in_scope(r["body"]["scope"], bucket, stream):
+                if self._in_scope(r["body"]["scope"], bucket, stream, family):
                     pats += r["body"]["patterns"]
                     if r["body"].get("mode", "extend") == "replace":
                         break
@@ -381,12 +384,12 @@ class Snapshot:
                                      for p in pats]
         return self._mask_cache[key]
 
-    def sign_rule(self, bucket: str, stream: str | None) -> dict:
-        key = (bucket, stream)
+    def sign_rule(self, bucket: str, stream: str | None, family: str | None = None) -> dict:
+        key = (bucket, stream, family)
         if key not in self._sign_cache:
             body = {"keys": "auto", "discriminators": [], "depth": 1}
             for r in self.signs:
-                if self._in_scope(r["body"]["scope"], bucket, stream):
+                if self._in_scope(r["body"]["scope"], bucket, stream, family):
                     body = {**body, **{k: v for k, v in r["body"].items() if k not in ("scope", "priority")}}
                     break
             self._sign_cache[key] = body

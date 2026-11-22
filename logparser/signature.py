@@ -22,6 +22,7 @@ class Signed:
     detail: dict = field(default_factory=dict)      # keys, discriminators, columns
     parsed: dict | None = None          # decoded record, reused by the parser stage
     error: str | None = None
+    family: str | None = None           # source family for structured records without a producer name
 
 
 _EDGE = "\"'[](){}<>.,;:!"
@@ -81,7 +82,8 @@ def _disc_values(fields: dict, header: dict, discriminators: list) -> list:
     return out
 
 
-def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | None = None) -> Signed:
+def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | None = None,
+         family_of=None) -> Signed:
     bucket = det.bucket
     fmt = det.format
     if fmt == "unstructured":
@@ -138,6 +140,9 @@ def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | Non
         template, variables = mask(det.payload[:400], snap.mask_patterns(bucket, stream), snap.protected)
         return Signed(_h(bucket, "broken", fmt), f"<undecodable {fmt}>", variables, error=str(exc))
 
+    family = family_of(det, flat) if family_of else None
+    if family:
+        rule = snap.sign_rule(bucket, stream, family)
     mode = rule.get("keys", "auto")
     disc = _disc_values(flat, det.header, rule.get("discriminators") or [])
     if fmt in ("cef", "leef", "delimited"):
@@ -166,4 +171,5 @@ def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | Non
     if text:
         template += " :: " + text
     detail = {"keys": keys[:400], "sig_keys": sig_keys[:400], "discriminators": disc, "text": text}
-    return Signed(_h(bucket, fmt, "\x1e".join(sig_keys), "\x1e".join(disc), text), template[:4000], [], detail, flat)
+    return Signed(_h(bucket, fmt, "\x1e".join(sig_keys), "\x1e".join(disc), text), template[:4000], [], detail, flat,
+                  family=family)

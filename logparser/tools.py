@@ -147,11 +147,14 @@ class Tools:
     # ------------------------------------------------------------ mask repair
     def _mask_candidate(self, source: str, body: dict):
         label, bucket = source.split("|", 1)
+        bucket, _, family = bucket.partition("#")
         stream = None if label == "-" else label
         scope = {"bucket": "^" + re.escape(bucket) + "$"}
         if stream:
             scope["stream"] = stream
         kind = "sign" if any(k in body for k in ("keys", "core_keys", "discriminators", "depth", "text")) else "mask"
+        if family and kind == "sign":       # masks act on text, which is signed before the family is known
+            scope["family"] = family
         full = {**body, "scope": scope, "priority": 10}
         registry.validate_rule(kind, full)
         snap = copy.copy(self.e.snap)
@@ -161,13 +164,13 @@ class Tools:
             pats = list(body["patterns"])
             if body.get("mode", "extend") == "extend":
                 base = registry.Snapshot.mask_patterns(self.e.snap, bucket, stream)
-                snap._mask_cache[(bucket, stream)] = [
+                snap._mask_cache[(bucket, stream, None)] = [
                     (p["name"], rx.compile(p["pattern"]), p["placeholder"], p.get("group", 0)) for p in pats] + list(base)
             else:
-                snap._mask_cache[(bucket, stream)] = [
+                snap._mask_cache[(bucket, stream, None)] = [
                     (p["name"], rx.compile(p["pattern"]), p["placeholder"], p.get("group", 0)) for p in pats]
         else:
-            snap._sign_cache[(bucket, stream)] = {"keys": "auto", "discriminators": [], "depth": 1,
+            snap._sign_cache[(bucket, stream, family or None)] = {"keys": "auto", "discriminators": [], "depth": 1,
                                                   **{k: v for k, v in body.items()}}
         return kind, full, snap, bucket, stream
 
@@ -182,8 +185,8 @@ class Tools:
         for r in rows:
             rec = self._rec(r)
             det, _, cols = self.e.analyse(rec)
-            before.add(signature.sign(self.e.snap, det, stream, cols).signature)
-            sg = signature.sign(snap, det, stream, cols)
+            before.add(self.e._sign(det, stream, cols).signature)
+            sg = self.e._sign(det, stream, cols, snap)
             after.setdefault(sg.signature, [0, sg.template])[0] += 1
         top = sorted(after.values(), key=lambda v: -v[0])
         singles = [t for c, t in top if c == 1][:8]
@@ -397,7 +400,7 @@ class Tools:
         for r in rows:
             rec = self._rec(r)
             det, _, cols = self.e.analyse(rec)
-            sg = signature.sign(self.e.snap, det, rec.label, cols)
+            sg = self.e._sign(det, rec.label, cols)
             res = self.e.parse_record(g, det, sg, rec, mapping=resolved, mapping_given=True)
             if res["status"] != "parsed":
                 problems.setdefault(f"parser: {res.get('reason', res['status'])}", []).append(_clip(r["raw"])[:300])
@@ -754,7 +757,7 @@ class Tools:
         raw = s[0]["raw"]
         rec = self._rec({"raw": raw, "source": g["source"]})
         det, _, cols = self.e.analyse(rec)
-        sg = signature.sign(self.e.snap, det, rec.label, cols)
+        sg = self.e._sign(det, rec.label, cols)
         static = sg.template
         spec, dropped = {}, []
         for name, value in (fields or {}).items():

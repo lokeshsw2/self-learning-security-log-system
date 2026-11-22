@@ -29,6 +29,8 @@ class Settings:
     # Format drift: key-set overlap (Jaccard) needed to attach a new structured
     # signature to an existing group as a new version of it.
     drift_overlap: float = 0.8
+    # Source families: key-set overlap needed to put a structured record in an existing family.
+    family_threshold: float = 0.4
     # Parse failures on an existing group before it is queued for repair.
     drift_failures: int = 5
     # Idle batches before a below-threshold group goes to the long-tail queue,
