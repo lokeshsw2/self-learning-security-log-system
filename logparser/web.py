@@ -38,6 +38,8 @@ class App:
         self.eng.sink = self.ch
         self.lock = threading.RLock()
         self.streams: dict = {}
+        self.learn_run: dict | None = None
+        self.learn_client = None          # tests put a fake model client here
 
     # ------------------------------------------------------------------ ingest
     def ingest(self, lines: list, ingest_id: str | None = None, label: str | None = None) -> dict:
@@ -298,6 +300,69 @@ class App:
                 "(parser_rule=? OR mapping_rule=?) AND merged_into IS NULL", (rid, rid))][:200]
         return {"rule_id": rid, "versions": vers, "used_by_groups": used}
 
+    # ------------------------------------------------------------------ learning (AI agents)
+    def learn_status(self) -> dict:
+        from .harness import ORDER, QUEUES
+        with self.lock:
+            rows = self.eng.store.q("SELECT name, COUNT(*) n FROM queue WHERE status='open' GROUP BY name")
+        open_ = {r["name"]: r["n"] for r in rows}
+        waiting = {role: open_.get(QUEUES[role], 0) for role in ORDER} | {"longtail": open_.get("longtail", 0)}
+        run = self.learn_run
+        pub = None
+        if run:
+            h = run["_h"]
+            pub = {k: v for k, v in run.items() if not k.startswith("_")}
+            pub.update(spent_usd=round(h.spent_usd, 4) if h else 0.0, current=h.current if h else None,
+                       results=list(h.results[-200:]) if h else [])
+        return {"key_configured": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+                "waiting": waiting, "run": pub}
+
+    def learn_start(self, roles: list, limit: int, budget_usd: float) -> dict:
+        from .harness import MODEL, ORDER, SMALL_MODEL, Harness
+        if self.learn_run and self.learn_run["running"]:
+            raise ValueError("a learning run is already going")
+        roles = [r for r in (ORDER + ["longtail"]) if r in roles]
+        if not roles:
+            raise ValueError("choose at least one agent")
+        if not 0 < budget_usd <= 100:
+            raise ValueError("budget must be between $0 and $100")
+        limit = max(1, min(int(limit), 200))
+        stop = threading.Event()
+        run = {"id": uuid.uuid4().hex[:8], "roles": roles, "limit": limit, "budget_usd": budget_usd,
+               "running": True, "started": time.time(), "finished": None, "role": None, "error": None,
+               "summary": {}, "_stop": stop, "_h": None}
+        self.learn_run = run
+
+        def go():
+            try:
+                h = Harness(self.eng, client=self.learn_client, model=MODEL, budget_usd=budget_usd,
+                            lock=self.lock, stop=stop)
+                run["_h"] = h
+                for role in roles:
+                    if h.stopped():
+                        run["summary"][role] = {"skipped": "budget reached" if h.over_budget() else "stopped"}
+                        continue
+                    run["role"] = role
+                    if role == "longtail":
+                        run["summary"][role] = h.run_longtail(limit, model=SMALL_MODEL)
+                    else:
+                        res = h.run_queue(role, limit)
+                        run["summary"][role] = {"items": len(res), "saved": sum(r["saved"] for r in res),
+                                                "flagged": sum(not r["saved"] for r in res)}
+            except Exception as exc:
+                traceback.print_exc()
+                run["error"] = f"{type(exc).__name__}: {exc}"[:500]
+            finally:
+                run["running"], run["finished"], run["role"] = False, time.time(), None
+
+        threading.Thread(target=go, daemon=True).start()
+        return self.learn_status()
+
+    def learn_stop(self) -> dict:
+        if self.learn_run:
+            self.learn_run["_stop"].set()
+        return self.learn_status()
+
     def queue(self) -> list:
         with self.lock:
             return [dict(r) | {"payload": json.loads(r["payload"])} for r in self.eng.store.q(
@@ -352,6 +417,7 @@ def make_handler(app: App):
                     "/api/rule": lambda: app.rule(p.get("rule_id", "")),
                     "/api/queue": lambda: app.queue(),
                     "/api/streams": lambda: [app._pub(x) for x in app.streams.values()],
+                    "/api/learn": lambda: app.learn_status(),
                 }
                 if u.path in routes:
                     return self._json(routes[u.path]())
@@ -370,6 +436,15 @@ def make_handler(app: App):
                 if u.path == "/api/streams":
                     b = json.loads(self._body() or b"{}")
                     return self._json(app.start_stream(b.get("kind", "file"), b["target"], b.get("label") or None))
+                if u.path == "/api/learn":
+                    b = json.loads(self._body() or b"{}")
+                    try:
+                        return self._json(app.learn_start(list(b.get("roles") or []), int(b.get("limit", 10)),
+                                                          float(b.get("budget_usd", 2))))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                if u.path == "/api/learn/stop":
+                    return self._json(app.learn_stop())
                 if u.path == "/api/streams/stop":
                     return self._json(app.stop_stream(p.get("id", "")))
                 self._json({"error": "not found"}, 404)

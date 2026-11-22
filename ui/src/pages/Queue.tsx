@@ -2,13 +2,23 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Empty, ErrorNote, Loading, Mono, useLoad } from "@/components/common"
-import { ago, api } from "@/lib/api"
+import { ago, api, type QueueItem } from "@/lib/api"
 import { go } from "@/lib/router"
+import { LearnPanel } from "./Learn"
 
 export function QueuePage() {
-  const { data, error } = useLoad(() => api.queue(), [])
-  if (error) return <ErrorNote error={error} />
-  if (!data) return <Loading rows={6} />
+  const { data, error, reload } = useLoad(() => api.queue(), [])
+  return (
+    <div className="space-y-4">
+      <LearnPanel onChange={reload} />
+      {error && <ErrorNote error={error} />}
+      {!data && !error && <Loading rows={6} />}
+      {data && <QueueTable data={data} />}
+    </div>
+  )
+}
+
+function QueueTable({ data }: { data: QueueItem[] }) {
   return (
     <Card>
       <CardHeader>

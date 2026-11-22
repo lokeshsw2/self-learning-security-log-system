@@ -14,7 +14,7 @@ const TABS = [
   { id: "unparsed", label: "Unparsed" },
   { id: "sources", label: "Sources & groups" },
   { id: "rules", label: "Rules" },
-  { id: "queue", label: "AI queue" },
+  { id: "queue", label: "AI agents" },
 ]
 
 // detail views highlight their parent tab

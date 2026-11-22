@@ -143,6 +143,38 @@ export interface QueueItem {
   attempts: number
 }
 
+export type Role = "source-naming" | "grouping-repair" | "parser-gen" | "ocsf-mapping" | "longtail"
+
+export interface LearnResult {
+  role: Role
+  key: string
+  saved: boolean
+  reason: string | null
+  at: number
+}
+
+export interface LearnRun {
+  id: string
+  roles: Role[]
+  limit: number
+  budget_usd: number
+  spent_usd: number
+  running: boolean
+  started: number
+  finished: number | null
+  role: Role | null
+  error: string | null
+  current: { role: Role; key: string; iteration: number } | null
+  summary: Partial<Record<Role, Record<string, Json>>>
+  results: LearnResult[]
+}
+
+export interface LearnStatus {
+  key_configured: boolean
+  waiting: Record<Role, number>
+  run: LearnRun | null
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, init)
   const j = await r.json()
@@ -171,6 +203,10 @@ export const api = {
   queue: () => call<QueueItem[]>("/api/queue"),
   startStream: (kind: string, target: string) =>
     call<Stream>("/api/streams", { method: "POST", body: JSON.stringify({ kind, target }) }),
+  learn: () => call<LearnStatus>("/api/learn"),
+  startLearn: (roles: Role[], limit: number, budget_usd: number) =>
+    call<LearnStatus>("/api/learn", { method: "POST", body: JSON.stringify({ roles, limit, budget_usd }) }),
+  stopLearn: () => call<LearnStatus>("/api/learn/stop", { method: "POST" }),
   stopStream: (id: string) => call<{ stopped: boolean }>(`/api/streams/stop?${qs({ id })}`, { method: "POST" }),
 }
 
