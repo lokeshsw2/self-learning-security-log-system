@@ -280,3 +280,36 @@ def test_deploy_check_passes_a_good_event_without_parsed_fields(ssh):
     assert res["exclude"] == {} and res["counts"]["ok"] == len(mine), res
     events[mine[0]["id"]]["ocsf"] = {**events[mine[0]["id"]]["ocsf"], "time": now}      # ingest time
     assert gid in D.verify_judge(eng, lines, events, {gid}, now)["exclude"]
+
+
+@pytest.mark.skipif(not os.path.exists(LOGSTASH) or os.environ.get("LP_SKIP_LOGSTASH"),
+                    reason="needs a local Logstash")
+def test_every_plugin_renders_to_config_logstash_loads(tmp_path):
+    """Each extract kind, with its options, as Logstash really loads it (a bad option fails the reload)."""
+    from logparser.sandbox import Sandbox, tables_for
+    sb = Sandbox(str(tmp_path / "sb"), http_port=18092, api_port=9622)
+    m = [{"to": "user.name", "from": "u"}, {"to": "status_id", "value": 1}, {"to": "activity_id", "value": 1},
+         {"to": "service.name", "value": "x"}]
+    cases = {
+        "csv": ([{"csv": {"columns": ["u", "b"], "separator": ",", "quote_char": "'"}}], "bob,2"),
+        "kv": ([{"kv": {"field_split": " ", "value_split": "=", "trim_value": "\"", "include_keys": ["u"],
+                        "prefix": ""}}], 'u="bob" b=2'),
+        "json": ([{"json": {}}], '{"u": "bob"}'),
+        "dissect": ([{"dissect": {"mapping": "%{u} %{}"}}], "bob rest"),
+        "grok": ([{"grok": {"patterns": ["^%{WORD:u}"], "pattern_definitions": {"X": "a+"}}}], "bob"),
+        "xml": ([{"xml": {"xpath": {"/r/u/text()": "u"}}}], "<r><u>bob</u></r>"),
+    }
+    try:
+        for name, (steps, payload) in cases.items():
+            body = {"class": "authentication", "extract": steps, "map": m}
+            D.validate(body, SCHEMA)
+            res = sb.run(D.render_group(body, SCHEMA, {}, "g", "T_sb"), [{"id": 0, "payload": payload, "h": {}}],
+                         tables_for(SCHEMA, "authentication"))
+            assert "error" not in res, (name, res)
+            ev = res["events"][0]
+            got = (ev.get("ocsf") or {}).get("user", {}).get("name")
+            assert got in ("bob", ["bob"]), (name, ev.get("tags"), ev.get("sb"))
+        bad = sb.run("csv { source => \"x\" tag_on_failure => [\"a\"] }", [{"id": 0, "payload": "a", "h": {}}], {})
+        assert "Unknown setting" in bad["error"]
+    finally:
+        sb.stop()

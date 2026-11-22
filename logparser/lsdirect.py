@@ -215,7 +215,7 @@ def render_steps(body: dict, default_tz: str | None = None) -> str:
             cols = "[" + ", ".join(lit(c) for c in o["columns"]) + "]"
             sep = f"\n  separator => {lit(o['separator'])}" if "separator" in o else ""
             q = f"\n  quote_char => {lit(o['quote_char'])}" if "quote_char" in o else ""
-            text = f"csv {{\n  source => {lit(src)}\n  target => {lit(F)}\n  columns => {cols}{sep}{q}\n  tag_on_failure => [\"_lp_csvfail\"]\n}}"
+            text = f"csv {{\n  source => {lit(src)}\n  target => {lit(F)}\n  columns => {cols}{sep}{q}\n}}"   # csv tags _csvparsefailure itself
         if src != "[@metadata][s][payload]":
             text = f"if ![{src[1:-1]}] {{\n  mutate {{ add_tag => [\"_lp_nofield\"] }}\n}} else {{\n" + \
                    "\n".join("  " + l for l in text.splitlines()) + "\n}"
@@ -269,7 +269,7 @@ def finisher_cfg(body: dict, schema, labels: dict) -> dict:
 
 
 _FAILS = ("_lp_grokfail", "_lp_dissectfail", "_lp_kvfail", "_lp_jsonfail", "_lp_csvfail", "_xmlparsefailure",
-          "_lp_nofield", "_lp_noextract", "_grokparsefailure", "_dissectfailure")
+          "_lp_nofield", "_lp_noextract", "_grokparsefailure", "_dissectfailure", "_csvparsefailure")
 FAIL_COND = " or ".join(f'"{t}" in [tags]' for t in _FAILS)
 FAIL_TAG_LIST = "[" + ", ".join(f'"{t}"' for t in _FAILS) + "]"
 
@@ -305,7 +305,7 @@ def render_group(body: dict, schema, labels: dict, gid: str, table_var: str, ver
 
 # ======================================================================= gate
 FAIL_TAGS = {"_lp_nofield": "source-field", "_lp_noextract": "extraction (no field was made)",
-             "_grokparsefailure": "grok", "_dissectfailure": "dissect", "_lp_grokfail": "grok", "_lp_dissectfail": "dissect", "_lp_kvfail": "kv", "_lp_jsonfail": "json",
+             "_grokparsefailure": "grok", "_dissectfailure": "dissect", "_csvparsefailure": "csv", "_lp_grokfail": "grok", "_lp_dissectfail": "dissect", "_lp_kvfail": "kv", "_lp_jsonfail": "json",
              "_lp_csvfail": "csv", "_lp_datefail": "date", "_xmlparsefailure": "xml", "_rubyexception": "ruby"}
 
 

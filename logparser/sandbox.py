@@ -163,12 +163,18 @@ class Sandbox:
                 text = fh.read().decode("utf-8", "replace")
         except OSError:
             return None
-        found = None
+        found = plugin = None
         for line in text.splitlines():
+            # a plugin's own complaint ("Unknown setting 'x' for csv") says more than the generic reload error
+            m = re.search(r"\]\[ERROR\]\[logstash\.(?:filters|codecs|config)[^\]]*\]\s*(?:\[[^\]]*\]\s*)*(.+)$", line)
+            if m and plugin is None:
+                plugin = m.group(1).strip()
             if "ERROR" in line:
                 m = _ERR.search(line)
                 if m:
                     found = (m.group(1) or m.group(2) or "").strip()
+        if plugin and (found is None or "Something is wrong" in found or "Could not execute" in found):
+            return plugin
         return found
 
     # ---------------------------------------------------------------- one test
