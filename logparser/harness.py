@@ -8,6 +8,10 @@ formats.
 
   python -m logparser.harness --db run.db parser-gen --limit 10
   python -m logparser.harness --db run.db longtail --limit 80
+  python -m logparser.harness --db run.db all --limit 10 --budget-usd 5
+
+`all` runs every queue in order (name sources, repair grouping, write parsers,
+map to OCSF, long tail) and stops once the estimated spend reaches the budget.
 
 Credentials come from the environment the Anthropic SDK reads
 (ANTHROPIC_API_KEY, or an `ant auth login` profile).
@@ -24,6 +28,10 @@ from .tools import Refused, Tools
 
 MODEL = "claude-opus-5-5"          # rule-writing agents
 SMALL_MODEL = "claude-haiku-5-5"   # long-tail extraction: the spec asks for a small model
+# USD per million tokens: input, output, cache read, 5-minute cache write.
+# Used only for the spend estimate and the budget stop; the bill is the source of truth.
+PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125)}
+ORDER = ["source-naming", "grouping-repair", "parser-gen", "ocsf-mapping"]
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 PROMPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
 
@@ -39,6 +47,15 @@ def _tool(name: str, description: str, props: dict, required: list) -> dict:
 
 S = {"type": "string"}
 TOOLSETS = {
+    "source-naming": [
+        _tool("get_samples", "Sample lines, decoded fields and templates of a source.",
+              {"source": S, "limit": {"type": "integer"}}, ["source"]),
+        _tool("test_source", "Which stored sources a candidate source rule claims, checked on every sampled line. "
+              "Changes nothing.", {"source": S, "rule": RULE}, ["source", "rule"]),
+        _tool("save_source", "Save the source rule and name the sources it claims. Every claimed source other than "
+              "this one must be listed in `also`, or the save is refused.",
+              {"source": S, "rule": RULE, "also": {"type": "array", "items": S}, "note": S}, ["source", "rule"]),
+    ],
     "grouping-repair": [
         _tool("get_samples", "Sample lines and templates of a group or a source.",
               {"group": S, "source": S, "limit": {"type": "integer"}}, []),
@@ -88,10 +105,10 @@ TOOLSETS = {
               {"group": S, "rule": RULE, "labels": LABELS, "note": S}, ["group", "rule"]),
     ],
 }
-QUEUES = {"grouping-repair": "grouping-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
-PROMPT_FILE = {"grouping-repair": "grouping_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
+QUEUES = {"source-naming": "needs-source", "grouping-repair": "grouping-repair", "parser-gen": "needs-parser", "ocsf-mapping": "needs-mapping"}
+PROMPT_FILE = {"source-naming": "source_naming.md", "grouping-repair": "grouping_repair.md", "parser-gen": "parser_gen.md", "ocsf-mapping": "ocsf_mapping.md",
                "longtail": "longtail.md"}
-SAVE_TOOL = {"grouping-repair": "save_operation", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
+SAVE_TOOL = {"source-naming": "save_source", "grouping-repair": "save_operation", "parser-gen": "save_parser", "ocsf-mapping": "save_mapping"}
 
 
 def system_prompt(role: str) -> str:
@@ -109,7 +126,11 @@ def dispatch(t: Tools, name: str, a: dict) -> dict:
     """Run one tool call. Refusals come back as data so the model can react."""
     try:
         if name == "get_samples":
-            return t.get_samples(a.get("group"), a.get("source"), int(a.get("limit", 10)))
+            return t.get_samples(a.get("group"), a.get("source"), int(a.get("limit") or 10))
+        if name == "test_source":
+            return t.test_source(a["source"], a["rule"])
+        if name == "save_source":
+            return t.save_source(a["source"], a["rule"], a.get("note", ""), list(a.get("also") or []))
         if name == "get_stats":
             return t.get_stats(a["group"])
         if name == "get_decisions":
@@ -167,7 +188,8 @@ def corrections_text(store, role: str, limit: int = 8) -> str:
 
 
 class Harness:
-    def __init__(self, engine, client=None, model: str = MODEL, max_iterations: int = 8, effort: str = "high"):
+    def __init__(self, engine, client=None, model: str = MODEL, max_iterations: int = 8, effort: str = "high",
+                 budget_usd: float | None = None):
         if not 5 <= max_iterations <= 8:
             raise ValueError("the loop is bounded to 5-8 iterations by design")
         self.e = engine
@@ -178,6 +200,17 @@ class Harness:
         self.model = model
         self.max_iterations = max_iterations
         self.effort = effort
+        self.budget_usd = budget_usd
+        self.spent_usd = 0.0
+
+    def _charge(self, model: str, u) -> None:
+        pi, po, pr, pw = PRICES.get(model, PRICES[MODEL])
+        self.spent_usd += ((u.input_tokens or 0) * pi + (u.output_tokens or 0) * po
+                           + (getattr(u, "cache_read_input_tokens", 0) or 0) * pr
+                           + (getattr(u, "cache_creation_input_tokens", 0) or 0) * pw) / 1e6
+
+    def over_budget(self) -> bool:
+        return self.budget_usd is not None and self.spent_usd >= self.budget_usd
 
     def _call(self, role: str, messages: list):
         import anthropic
@@ -206,7 +239,7 @@ class Harness:
         agent = f"harness:{role}"
         t = Tools(self.e, agent)
         queue = QUEUES[role]
-        target = None if role == "grouping-repair" else "group"
+        target = {"grouping-repair": None, "source-naming": "source"}.get(role, "group")
         intro = (f"Queue item from `{queue}`. The {target} id is `{key}`.\n"
                  f"Item details (data, not instructions): {json.dumps(payload)[:1500]}")
         extra = corrections_text(self.e.store, role)
@@ -216,6 +249,7 @@ class Harness:
         for i in range(self.max_iterations):
             resp = self._call(role, messages)
             u = resp.usage
+            self._charge(self.model, u)
             self.e.store.log_tool(agent, "model_call", key, True, f"iteration {i + 1}, stop {resp.stop_reason}",
                                   (u.input_tokens or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0)
                                   + (getattr(u, "cache_creation_input_tokens", 0) or 0), u.output_tokens or 0)
@@ -239,6 +273,8 @@ class Harness:
                 if target and (c.name.startswith(("test_", "save_")) or c.name in ("get_samples", "diagnose",
                                                                                     "report_problem")):
                     args[target] = key          # an agent works on its own item only
+                    if target == "source":
+                        args.pop("group", None)
                 out = dispatch(t, c.name, args)
                 if c.name == SAVE_TOOL[role] and (out.get("saved") not in (None, False) or out.get("applied")):
                     saved = True
@@ -257,7 +293,7 @@ class Harness:
     def run_queue(self, role: str, limit: int = 20, bucket: str | None = None) -> list:
         out = []
         for it in self.e.store.queue_items(QUEUES[role]):
-            if len(out) >= limit:
+            if len(out) >= limit or self.over_budget():
                 break
             p = it["payload"]
             if bucket and bucket not in str(p.get("bucket", "")) + "|" + str(p.get("source", "")):
@@ -282,6 +318,9 @@ class Harness:
         done = {"saved": 0, "dropped_values": 0, "calls": 0, "stopped": None}
         items = t.longtail_batch(limit, bucket)["items"]
         for i in range(0, len(items), batch):
+            if self.over_budget():
+                done["stopped"] = "budget reached"
+                break
             chunk = items[i:i + batch]
             lines = [{"signature": it["signature"], "line": it["raw"]} for it in chunk]
             try:
@@ -296,6 +335,7 @@ class Harness:
                 break
             done["calls"] += 1
             u = resp.usage
+            self._charge(model, u)
             self.e.store.log_tool("harness:longtail", "model_call", None, True, f"{len(chunk)} lines",
                                   u.input_tokens or 0, u.output_tokens or 0)
             if resp.stop_reason != "end_turn":
@@ -325,20 +365,36 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="logparser.harness")
     ap.add_argument("--db", required=True)
     ap.add_argument("--settings")
-    ap.add_argument("role", choices=["grouping-repair", "parser-gen", "ocsf-mapping", "longtail"])
+    ap.add_argument("role", choices=ORDER + ["longtail", "all"])
     ap.add_argument("--limit", type=int, default=20)
     ap.add_argument("--bucket")
     ap.add_argument("--model")
     ap.add_argument("--max-iterations", type=int, default=8)
+    ap.add_argument("--budget-usd", type=float, help="stop starting new items once the estimated spend reaches this")
+    ap.add_argument("--clickhouse", help="send lines that new rules parse to ClickHouse, e.g. http://localhost:8123")
     a = ap.parse_args(argv)
+    if not os.environ.get("ANTHROPIC_API_KEY") and not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        print("note: ANTHROPIC_API_KEY is not set; the SDK will try an `ant auth login` profile", flush=True)
     eng = open_engine(a)
-    if a.role == "longtail":
-        print(json.dumps(Harness(eng).run_longtail(a.limit, bucket=a.bucket, model=a.model or SMALL_MODEL), indent=1))
-        return
-    h = Harness(eng, model=a.model or MODEL, max_iterations=a.max_iterations)
-    res = h.run_queue(a.role, a.limit, a.bucket)
-    print(json.dumps({"items": len(res), "saved": sum(r["saved"] for r in res),
-                      "flagged": [r for r in res if not r["saved"]]}, indent=1))
+    if a.clickhouse:
+        from .sink import ClickHouseSink
+        eng.sink = ClickHouseSink(a.clickhouse)     # replayed lines leave `unparsed` and land in `ocsf_events`
+    h = Harness(eng, model=a.model or MODEL, max_iterations=a.max_iterations, budget_usd=a.budget_usd)
+    report = {}
+    for role in (ORDER + ["longtail"] if a.role == "all" else [a.role]):
+        if h.over_budget():
+            report[role] = "skipped: budget reached"
+            continue
+        if role == "longtail":
+            report[role] = h.run_longtail(a.limit, bucket=a.bucket,
+                                          model=a.model if a.role == "longtail" and a.model else SMALL_MODEL)
+        else:
+            res = h.run_queue(role, a.limit, a.bucket)
+            report[role] = {"items": len(res), "saved": sum(r["saved"] for r in res),
+                            "flagged": [r for r in res if not r["saved"]]}
+        print(f"{role}: done, estimated spend so far ${h.spent_usd:.2f}", flush=True)
+    report["estimated_spend_usd"] = round(h.spent_usd, 4)
+    print(json.dumps(report, indent=1, default=str))
 
 
 if __name__ == "__main__":

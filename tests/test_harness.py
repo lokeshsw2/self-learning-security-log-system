@@ -69,3 +69,37 @@ def test_loop_is_bounded_and_flags_for_a_human(tmp_path):
     assert flagged[0]["key"] == key and "iteration limit" in flagged[0]["payload"]["flag_reason"]
     with pytest.raises(ValueError):
         Harness(eng, client=fake, max_iterations=50)
+
+
+SSHD = {"vendor": "OpenBSD", "product": "OpenSSH", "match": {"bucket": r"\|sshd$", "text": r"^Failed password for "}}
+
+
+def test_source_naming_role_names_the_source(tmp_path):
+    eng = make(tmp_path)
+    feed(eng, tmp_path, SSH)
+    key = eng.store.queue_items("needs-source")[0]["key"]
+    fake = FakeClient([
+        {"tool": "get_samples", "input": {"source": "some-other-source", "limit": 5}},
+        {"tool": "test_source", "input": {"rule": SSHD}},
+        {"tool": "save_source", "input": {"rule": SSHD, "note": "sshd program name and message"}},
+    ])
+    h = Harness(eng, client=fake)
+    res = h.run_queue("source-naming")
+    assert res == [{"key": key, "saved": True, "reason": None}]
+    # the source id is pinned to the item even when the model names another one
+    got = json.loads(fake.requests[1]["messages"][2]["content"][0]["content"])
+    assert got["source"] == key
+    assert not eng.store.queue_items("needs-source")
+    src = next(s for s in eng.store.sources() if s["source"] == key)
+    assert (src["vendor"], src["product"]) == ("OpenBSD", "OpenSSH")
+    assert "source_naming" not in fake.requests[0]["system"] and "Role: source naming" in fake.requests[0]["system"]
+
+
+def test_budget_stops_new_items(tmp_path):
+    eng = make(tmp_path)
+    feed(eng, tmp_path, SSH)
+    fake = FakeClient([{"text": "FLAG: cannot tell"}] * 10)
+    h = Harness(eng, client=fake, budget_usd=0.000001)
+    res = h.run_queue("parser-gen") + h.run_queue("source-naming")
+    assert len(fake.requests) == 1 and len(res) == 1     # the first call spent the budget; nothing else started
+    assert h.spent_usd == pytest.approx((100 * 4 + 20 * 20) / 1e6)
