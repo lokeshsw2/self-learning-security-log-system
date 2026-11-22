@@ -23,7 +23,10 @@ FAIL_WORDS = {"denied", "deny", "blocked", "block", "dropped", "drop", "rejected
 OK_WORDS = {"allowed", "allow", "accepted", "accept", "permitted", "permit", "success", "succeeded", "successful",
             "passed", "pass"}
 _ZONED = rx.compile(r"^\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,]\d+)?\s*(?:Z|[+-]\d\d:?\d\d)$")
-_WORD = rx.compile(r"[A-Za-z][A-Za-z_\-]*")
+_WORD = rx.compile(r"[A-Za-z]+")          # "user_rejected" -> user, rejected
+# event-name fields: only their last part states an outcome ("mfa.challenge.denied" -> denied)
+EVENT_KEYS = {"event", "event_type", "eventtype", "event_name", "eventname", "type", "name", "operation", "activity"}
+_LAST = rx.compile(r"[A-Za-z]+$")
 _DATEISH = rx.compile(r"\b(?:\d{4}[-/]\d\d[-/]\d\d|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\d{1,2} )")
 _EPOCH_KEYS = {"ts", "time", "timestamp", "eventtime", "event_time", "epoch", "created", "start", "end", "rt"}
 NEGATIONS = {"not", "no", "un", "non"}
@@ -62,9 +65,13 @@ def _outcome_words(fields: dict) -> tuple[set, set, str | None]:
         if not isinstance(v, str) or len(v) > 60:
             continue
         key = k.split(".")[-1].split("#")[0].lower()
-        if key not in OUTCOME_KEYS:
+        if key in OUTCOME_KEYS:
+            words = {w.lower() for w in _WORD.findall(v)}
+        elif key in EVENT_KEYS and any(ch in v for ch in "._:/-"):
+            last = _LAST.search(v.strip())
+            words = {last.group(0).lower()} if last else set()
+        else:
             continue
-        words = {w.lower() for w in _WORD.findall(v)}
         if words & NEGATIONS:                # "not blocked", "no action": not an outcome word here
             continue
         f, o = words & FAIL_WORDS, words & OK_WORDS

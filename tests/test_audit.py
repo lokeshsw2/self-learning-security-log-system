@@ -170,3 +170,14 @@ def test_audit_only_when_fix_rounds_is_zero(tmp_path):
     h.touched = {sig}
     report = learn(h, ["longtail"], 10, "claude-sonnet-5-5", fix_rounds=0, repair=False)
     assert report["audit"]["groups_failing"] == 1 and fake.requests == []      # no model call, no spend
+
+
+def test_outcome_check_reads_event_names_and_joined_words():
+    from logparser import checks
+    det = types.SimpleNamespace(header={})
+    ok = {"status_id": 1, "time": 1}
+    assert checks.problems(det, {"event": "mfa.challenge.denied"}, ok, [], {})          # last part of the name
+    assert checks.problems(det, {"reason": "user_rejected"}, ok, [], {})                 # joined words
+    assert not checks.problems(det, {"event": "mfa.challenge.approved"}, ok, [], {})
+    assert not checks.problems(det, {"event": "denied.list.updated"}, ok, [], {})        # only the last part counts
+    assert not checks.problems(det, {"reason": "no_response"}, ok, [], {})               # negation: not read

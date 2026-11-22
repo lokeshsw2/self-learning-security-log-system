@@ -412,7 +412,7 @@ class Harness:
 
 
 def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: str | None = None,
-          fix_rounds: int = 1, on_progress=None, repair: bool = True) -> dict:
+          fix_rounds: int = 1, on_progress=None, repair: bool = True, only: set | None = None) -> dict:
     """Run the agents, self-audit what they saved, give failing groups `fix_rounds` more tries with
     the audit findings as feedback, and audit again. Code decides; the agents only write rules."""
     from . import audit
@@ -441,7 +441,7 @@ def learn(h: "Harness", roles: list, limit: int, longtail_model: str, bucket: st
         return a
 
     for role in roles:
-        step(role, None, role)
+        step(role, only, role)
     if not h.touched:
         return report
     a = check("audit")
@@ -477,6 +477,7 @@ def main(argv=None) -> None:
     ap.add_argument("--max-iterations", type=int, default=8)
     ap.add_argument("--budget-usd", type=float, help="stop starting new items once the estimated spend reaches this")
     ap.add_argument("--clickhouse", help="send lines that new rules parse to ClickHouse, e.g. http://localhost:8123")
+    ap.add_argument("--only", action="append", help="work only on these queue keys (group ids)")
     ap.add_argument("--fix-rounds", type=int, default=1,
                     help="after the self-audit, rounds in which agents fix what it found (0: audit only)")
     a = ap.parse_args(argv)
@@ -489,6 +490,7 @@ def main(argv=None) -> None:
     h = Harness(eng, model=a.model or MODEL, max_iterations=a.max_iterations, budget_usd=a.budget_usd)
     roles = ORDER + ["longtail"] if a.role == "all" else [a.role]
     report = learn(h, roles, a.limit, a.model or SMALL_MODEL, a.bucket, fix_rounds=a.fix_rounds,
+                   only=set(a.only) if a.only else None,
                    on_progress=lambda tag, _: print(f"{tag}: done, estimated spend so far ${h.spent_usd:.2f}",
                                                     flush=True))
     report["estimated_spend_usd"] = round(h.spent_usd, 4)
