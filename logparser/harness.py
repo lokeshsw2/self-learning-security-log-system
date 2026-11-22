@@ -397,6 +397,8 @@ class Harness:
 
 
 def main(argv=None) -> None:
+    from .envfile import load_env
+    load_env()
     from .cli import open_engine
     ap = argparse.ArgumentParser(prog="logparser.harness")
     ap.add_argument("--db", required=True)

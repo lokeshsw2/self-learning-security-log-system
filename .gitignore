@@ -8,3 +8,6 @@ work/
 logparser/web/dist/
 ui/node_modules/
 *.hprof
+
+# secrets
+.env

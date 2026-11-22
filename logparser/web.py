@@ -458,6 +458,8 @@ def make_handler(app: App):
 
 
 def main() -> None:
+    from .envfile import load_env
+    load_env()
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
     ap.add_argument("--settings")
