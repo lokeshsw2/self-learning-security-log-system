@@ -31,7 +31,7 @@ MODEL = "claude-opus-5-5"          # rule-writing agents
 SMALL_MODEL = "claude-haiku-5-5"   # long-tail extraction: the spec asks for a small model
 # USD per million tokens: input, output, cache read, 5-minute cache write.
 # Used only for the spend estimate and the budget stop; the bill is the source of truth.
-PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125)}
+PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-sonnet-5-5": (2.0, 10.0, 0.10, 2.50), "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125)}
 ORDER = ["source-naming", "grouping-repair", "parser-gen", "ocsf-mapping"]
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 PROMPTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
@@ -213,11 +213,14 @@ class Harness:
     def stopped(self) -> bool:
         return self.over_budget() or bool(self.stop is not None and self.stop.is_set())
 
-    def _charge(self, model: str, u) -> None:
+    def _charge(self, model: str, u) -> float:
+        """Add one call's estimated cost; returns it so the call log can carry it."""
         pi, po, pr, pw = PRICES.get(model, PRICES[MODEL])
-        self.spent_usd += ((u.input_tokens or 0) * pi + (u.output_tokens or 0) * po
-                           + (getattr(u, "cache_read_input_tokens", 0) or 0) * pr
-                           + (getattr(u, "cache_creation_input_tokens", 0) or 0) * pw) / 1e6
+        cost = ((u.input_tokens or 0) * pi + (u.output_tokens or 0) * po
+                + (getattr(u, "cache_read_input_tokens", 0) or 0) * pr
+                + (getattr(u, "cache_creation_input_tokens", 0) or 0) * pw) / 1e6
+        self.spent_usd += cost
+        return cost
 
     def over_budget(self) -> bool:
         return self.budget_usd is not None and self.spent_usd >= self.budget_usd
@@ -264,9 +267,10 @@ class Harness:
             self.current = {"role": role, "key": key, "iteration": i + 1}
             resp = self._call(role, messages)
             u = resp.usage
-            self._charge(self.model, u)
+            cost = self._charge(self.model, u)
             with self.lock:
-                self.e.store.log_tool(agent, "model_call", key, True, f"iteration {i + 1}, stop {resp.stop_reason}",
+                self.e.store.log_tool(agent, "model_call", key, True,
+                                      f"iteration {i + 1}, stop {resp.stop_reason}, {self.model}, ${cost:.4f}",
                                       (u.input_tokens or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0)
                                       + (getattr(u, "cache_creation_input_tokens", 0) or 0), u.output_tokens or 0)
             if resp.stop_reason == "refusal":
@@ -369,10 +373,12 @@ class Harness:
                 break
             done["calls"] += 1
             u = resp.usage
-            self._charge(model, u)
+            cost = self._charge(model, u)
             with self.lock:
-                self.e.store.log_tool("harness:longtail", "model_call", None, True, f"{len(chunk)} lines",
-                                      u.input_tokens or 0, u.output_tokens or 0)
+                self.e.store.log_tool("harness:longtail", "model_call", None, True,
+                                      f"{len(chunk)} lines, {model}, ${cost:.4f}",
+                                      (u.input_tokens or 0) + (getattr(u, "cache_read_input_tokens", 0) or 0)
+                                      + (getattr(u, "cache_creation_input_tokens", 0) or 0), u.output_tokens or 0)
             if resp.stop_reason != "end_turn":
                 done["stopped"] = f"stop_reason {resp.stop_reason}"
                 break
@@ -425,7 +431,7 @@ def main(argv=None) -> None:
             continue
         if role == "longtail":
             report[role] = h.run_longtail(a.limit, bucket=a.bucket,
-                                          model=a.model if a.role == "longtail" and a.model else SMALL_MODEL)
+                                          model=a.model or SMALL_MODEL)
         else:
             res = h.run_queue(role, a.limit, a.bucket)
             report[role] = {"items": len(res), "saved": sum(r["saved"] for r in res),
