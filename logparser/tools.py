@@ -1007,8 +1007,9 @@ class Tools:
     def save_longtail(self, sig: str, fields: dict, summary: str = "") -> dict:
         g = self._group(sig)
         day = time.strftime("%Y-%m-%d")
-        used = self.store.q("SELECT COUNT(*) n FROM tool_calls WHERE tool='save_longtail' AND ok=1 AND "
-                            "date(at,'unixepoch')=date('now')")[0]["n"]
+        day_start = time.time() // 86400 * 86400          # today, UTC (portable: no SQL date functions)
+        used = self.store.q("SELECT COUNT(*) n FROM tool_calls WHERE tool='save_longtail' AND ok=1 AND at >= ?",
+                            (day_start,))[0]["n"]
         if used >= self.e.settings.longtail_daily_budget:
             raise Refused(f"daily long-tail budget of {self.e.settings.longtail_daily_budget} is used up ({day})")
         s = self.store.samples(g["signature"])

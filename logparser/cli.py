@@ -15,13 +15,13 @@ import time
 from . import registry
 from .config import Settings
 from .engine import Engine, metrics
-from .store import SqliteStore
+from .store import SqliteStore, open_store
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def open_engine(args) -> Engine:
-    store = SqliteStore(args.db)
+    store = open_store(args.db)
     settings = Settings.load(args.settings) if args.settings else Settings()
     saved = store.get_state("settings")
     if saved and not args.settings:
@@ -32,7 +32,7 @@ def open_engine(args) -> Engine:
 
 
 def cmd_init(args) -> None:
-    store = SqliteStore(args.db)
+    store = open_store(args.db)
     settings = Settings.load(args.settings) if args.settings else Settings()
     for kv in args.set or []:
         k, v = kv.split("=", 1)
@@ -66,7 +66,7 @@ def cmd_run(args) -> None:
 
 
 def cmd_status(args) -> None:
-    store = SqliteStore(args.db)
+    store = open_store(args.db)
     print("raw lines by status:", {r["status"]: r["n"] for r in store.q("SELECT status, COUNT(*) n FROM raw GROUP BY status")})
     print("groups by status:  ", {r["status"]: r["n"] for r in store.q("SELECT status, COUNT(*) n FROM groups GROUP BY status")})
     print("events:            ", {("valid" if r["valid"] else "invalid" if r["valid"] is not None else "unmapped"): r["n"]
@@ -81,16 +81,16 @@ def cmd_status(args) -> None:
 
 
 def cmd_metrics(args) -> None:
-    json.dump(metrics(SqliteStore(args.db)), sys.stdout, indent=1)
+    json.dump(metrics(open_store(args.db)), sys.stdout, indent=1)
     print()
 
 
 def cmd_export(args) -> None:
-    print(registry.export_rules(SqliteStore(args.db), args.path, history=args.history), "rules exported")
+    print(registry.export_rules(open_store(args.db), args.path, history=args.history), "rules exported")
 
 
 def cmd_import(args) -> None:
-    print(registry.import_rules(SqliteStore(args.db), args.path, created_by="import"))
+    print(registry.import_rules(open_store(args.db), args.path, created_by="import"))
 
 
 def cmd_rollback(args) -> None:
@@ -198,7 +198,7 @@ def main(argv=None) -> None:
         open_engine(a), None))))
     p = sub.add_parser("tiers")
     p.set_defaults(fn=lambda a: print(json.dumps(__import__("logparser.repair", fromlist=["x"]).tiers(
-        SqliteStore(a.db)), indent=1)))
+        open_store(a.db)), indent=1)))
     p = sub.add_parser("audit", help="run the meaning checks over saved mappings")
     p.add_argument("--enqueue", action="store_true")
     p.set_defaults(fn=lambda a: print(json.dumps(__import__("logparser.tools", fromlist=["x"]).Tools(

@@ -102,6 +102,14 @@ CREATE TABLE IF NOT EXISTS corrections (
 """
 
 
+def open_store(url: str):
+    """A store by url: mysql://user:password@host:port/database, sqlite:///path, or a plain SQLite path."""
+    if url.startswith(("mysql://", "mysql+pymysql://")):
+        from .store_mysql import MySQLStore
+        return MySQLStore(url)
+    return SqliteStore(url[len("sqlite:///"):] if url.startswith("sqlite:///") else url)
+
+
 def _j(v: Any) -> str:
     return json.dumps(v, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
@@ -300,7 +308,7 @@ class SqliteStore(Store):
                 continue
             cur = self.db.execute(
                 f"DELETE FROM raw WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER "
-                f"(PARTITION BY signature ORDER BY id DESC) rn FROM raw WHERE {status_sql}) WHERE rn > ?)", (keep,))
+                f"(PARTITION BY signature ORDER BY id DESC) rn FROM raw WHERE {status_sql}) t WHERE rn > ?)", (keep,))
             dropped += cur.rowcount
         if dropped:
             self.db.execute("DELETE FROM events WHERE raw_id NOT IN (SELECT id FROM raw)")

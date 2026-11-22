@@ -132,6 +132,8 @@ class ServiceConfig:
         unknown = set(self.store) - {"url"}
         if unknown:
             raise ValueError(f"unknown store settings: {sorted(unknown)}")
+        if not self.store.get("url", "").startswith(("sqlite:///", "mysql://", "mysql+pymysql://")):
+            raise ValueError("store.url: sqlite:///path or mysql://user:password@host:port/database")
 
     def redacted(self) -> dict:
         """The configuration with secret-looking client settings hidden (for status pages and logs)."""
@@ -140,10 +142,20 @@ class ServiceConfig:
         d["store"] = {"url": re.sub(r"//([^:/@]+):[^@]+@", r"//\1:***@", d["store"].get("url", ""))}
         return d
 
+    def store_url(self) -> str:
+        """The store url with ${ENV} filled in: sqlite:///path or mysql://user:${MYSQL_PASSWORD}@host:port/db."""
+        url = _env(self.store.get("url", ""))
+        if url.startswith("sqlite:///"):
+            self.sqlite_path()
+        return url
+
+    def is_mysql(self) -> bool:
+        return self.store.get("url", "").startswith(("mysql://", "mysql+pymysql://"))
+
     def sqlite_path(self) -> str:
         url = self.store.get("url", "")
         if not url.startswith("sqlite:///"):
-            raise ValueError(f"store url {url!r}: only sqlite:/// is implemented so far (MySQL comes in phase 6)")
+            raise ValueError(f"store url {self.redacted()['store']['url']!r} is not a SQLite path")
         path = url[len("sqlite:///"):]
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         return path

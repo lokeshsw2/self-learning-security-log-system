@@ -1,6 +1,7 @@
 """Unit tests for the Logstash compiler: pattern conversion, strftime -> Joda, a small compile
 snapshot.  None of them starts a JVM.  One slow end-to-end test runs only with LS_SLOW=1."""
 import os
+from tests.conftest import new_store
 import re
 
 import pytest
@@ -119,7 +120,7 @@ def test_digests_agree_between_python_and_the_documented_formula():
 
 # ---------------------------------------------------------------- compile snapshot
 def make_engine(tmp_path):
-    store = SqliteStore(str(tmp_path / "t.db"))
+    store = new_store(str(tmp_path / "t.db"))
     registry.import_rules(store, os.path.join(ROOT, "registry", "builtin.json"))
     eng = Engine(store, Settings(group_threshold=3), schema=SCHEMA, now=1767225600.0)
     return eng

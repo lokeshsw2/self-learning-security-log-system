@@ -126,7 +126,7 @@ class LearnerService:
 
     def _open_engine(self):
         from ..cli import open_engine
-        return open_engine(types.SimpleNamespace(db=self.cfg.sqlite_path(), settings=self.cfg.engine_settings))
+        return open_engine(types.SimpleNamespace(db=self.cfg.store_url(), settings=self.cfg.engine_settings))
 
     # ---------------------------------------------------------------- intake
     def _done_offset(self, stream: str) -> int:

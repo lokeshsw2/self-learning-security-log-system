@@ -1,5 +1,6 @@
 import json
 import os
+from tests.conftest import new_store
 import time
 
 import pytest
@@ -19,7 +20,7 @@ NOW = 1767225600.0  # 2026-01-01T00:00:00Z
 
 
 def make(tmp_path, seeds=True, **settings):
-    store = SqliteStore(str(tmp_path / "t.db"))
+    store = new_store(str(tmp_path / "t.db"))
     registry.import_rules(store, os.path.join(ROOT, "registry", "builtin.json"))
     if seeds:
         registry.load_dir(store, os.path.join(ROOT, "registry", "seeds"))
@@ -80,13 +81,13 @@ def test_export_import_roundtrip(tmp_path):
     eng = make(tmp_path)
     out = str(tmp_path / "reg.json")
     n = registry.export_rules(eng.store, out)
-    other = SqliteStore(str(tmp_path / "o.db"))
+    other = new_store(str(tmp_path / "o.db"))
     assert registry.import_rules(other, out) == (n, 0)
     assert registry.import_rules(other, out) == (0, n)
     bad = json.load(open(out))
     bad["rules"][0]["body"] = {"nonsense": True}
     json.dump(bad, open(out, "w"))
-    third = SqliteStore(str(tmp_path / "p.db"))
+    third = new_store(str(tmp_path / "p.db"))
     with pytest.raises(registry.RuleError):
         registry.import_rules(third, out)
     assert third.rules() == []          # all or nothing

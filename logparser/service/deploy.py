@@ -87,7 +87,7 @@ class Deployer:
             return self.verify_direct(work)
         lv = _ls_verify()
         from .. import logstash as L
-        db = snapshot(self.cfg.sqlite_path(), os.path.join(work, "engine.db"))
+        db = self._snapshot(work)
         eng = lv.open_engine(db)
         lines = lv.build_lines(eng, db, self.cfg.logstash.verify_per_group, 0,
                                base_events=self.cfg.logstash.base_fallback)
@@ -118,6 +118,18 @@ class Deployer:
             pass
         return gen, used or set(), history, causes, len(lines)
 
+    def _snapshot(self, work: str) -> str:
+        """A consistent SQLite copy of the store for the verification run (MySQL: every table exported)."""
+        dst = os.path.join(work, "engine.db")
+        if self.cfg.is_mysql():
+            from ..store_mysql import MySQLStore
+            st = MySQLStore(self.cfg.store_url())
+            try:
+                return st.export_sqlite(dst)
+            finally:
+                st.close()
+        return snapshot(self.cfg.sqlite_path(), dst)
+
     @staticmethod
     def _drop_last(comp, include, used, history) -> tuple:
         """The last allowed pass still found failing groups: leave them out (the smaller set is not run again)."""
@@ -134,7 +146,7 @@ class Deployer:
         if each of its lines comes back as a passing event of that group and its filter takes no other lines."""
         lv = _ls_verify()
         from .. import logstash as L, lsdirect
-        db = snapshot(self.cfg.sqlite_path(), os.path.join(work, "engine.db"))
+        db = self._snapshot(work)
         eng = lv.open_engine(db)
         comp = L.Compiler(eng, direct=True)
         include, history, causes = None, [], {}

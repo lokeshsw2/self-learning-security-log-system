@@ -124,16 +124,20 @@ def test_config_is_checked(tmp_path):
         ServiceConfig.load(str(p))
     cfg = ServiceConfig.load(os.path.join(ROOT, "deploy", "service", "local.json"))
     assert cfg.kafka.unparsed_topic == "logs.unparsed" and cfg.learning.enabled is False
-    cfg.store = {"url": "mysql://u@h/db"}
-    with pytest.raises(ValueError, match="MySQL comes in phase 6"):
+    cfg.store = {"url": "mysql://u:${LP_TEST_PW}@h:3306/db"}
+    cfg.validate()                                  # MySQL is a supported store
+    assert cfg.is_mysql() and "***" in cfg.redacted()["store"]["url"]
+    with pytest.raises(ValueError, match="not a SQLite path"):
         cfg.sqlite_path()
+    cfg.store = {"url": "postgres://x/y"}
+    with pytest.raises(ValueError, match="store.url"):
+        cfg.validate()
 
 
-# SQLite-only SQL outside store.py: the MySQL port (phase 6) has to touch each of these. New code must
-# not add more; when one is moved into store.py, lower the number here.
-SQLITE_ONLY = re.compile(r"json_extract|json_set|INSERT OR IGNORE|INSERT OR REPLACE|ON CONFLICT|unixepoch|"
-                         r"datetime\(|strftime\('%|ROW_NUMBER|PRAGMA")
-BASELINE = 9
+# SQL outside store.py runs on SQLite and, through store_mysql.translate, on MySQL. The translator handles
+# INSERT OR IGNORE/REPLACE, ON CONFLICT ... excluded, json_extract and json_set; these it cannot translate:
+SQLITE_ONLY = re.compile(r"unixepoch|datetime\(|strftime\('%|ROW_NUMBER|PRAGMA|julianday|GLOB '|\browid\b")
+BASELINE = 0
 
 
 def test_sqlite_only_sql_does_not_spread():
