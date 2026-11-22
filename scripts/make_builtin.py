@@ -117,7 +117,7 @@ add("dialect:kv_pipe", {"mode": "span", "key_pattern": r"(?:^|\|)(?P<k>[A-Za-z_]
     "key=value|key=value")
 add("dialect:kv_label", {"mode": "span", "key_pattern": r"(?:^|, )(?P<k>[A-Z][A-Za-z0-9_]*(?: [A-Za-z0-9_]+){0,4}): ",
                            "strip": " ,"}, "Label: value, Label: value (labels may contain spaces)")
-add("dialect:kv_js", {"mode": "pair", "pair_pattern": r"(?:^|[{,])\s*(?P<k>[A-Za-z_]\w*):'(?P<s>.*?)'(?:\s*[,}])"},
+add("dialect:kv_js", {"mode": "pair", "pair_pattern": r"(?:[{,]\s*)?(?P<k>[A-Za-z_]\w*):'(?P<s>.*?)'\s*[,}]"},
     "key:'value' pairs with unquoted keys (JavaScript-style object text)")
 add("dialect:kv_span", {"mode": "span", "key_pattern": r"(?:^|\s)(?P<k>[A-Za-z_][\w.\-]*)=", "strip": " \t"},
     "key=value where values may contain spaces and run to the next key")

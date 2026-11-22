@@ -600,7 +600,7 @@
   {
    "body": {
     "mode": "pair",
-    "pair_pattern": "(?:^|[{,])\\s*(?P<k>[A-Za-z_]\\w*):'(?P<s>.*?)'(?:\\s*[,}])"
+    "pair_pattern": "(?:[{,]\\s*)?(?P<k>[A-Za-z_]\\w*):'(?P<s>.*?)'\\s*[,}]"
    },
    "meta": {
     "created_by": "builtin",
