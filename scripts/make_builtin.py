@@ -20,7 +20,7 @@ ISO = r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d)?"
 HOST = r"[A-Za-z0-9][A-Za-z0-9._\-:]*"
 PRI = r"(?:<(?P<pri>\d{1,3})>)?"
 HEADER_PREFIX = [
-    r"^" + PRI + r"(?:\d+: )?(?P<timestamp>" + TS3164 + "|" + ISO + r")(?: (?P<host>" + HOST
+    r"^(?:\[[^\]]{1,40}\])*\s*" + PRI + r"(?:\d+: )?(?P<timestamp>" + TS3164 + "|" + ISO + r")(?: (?P<host>" + HOST
     + r"))?(?: (?P<proc>[^\s\[:]+)(?:\[(?P<pid>\d+)\])?)?",
     r"^<(?P<pri>\d{1,3})>(?P<version>\d{1,2}) (?P<timestamp>\S+) (?P<host>\S+)",
     r"^<(?P<pri>\d{1,3})>",

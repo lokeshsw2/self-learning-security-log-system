@@ -102,8 +102,19 @@ def cmd_rollback(args) -> None:
         print("replayed:", eng.replay_signatures(sigs))
 
 
+def learn_zones(eng) -> None:
+    """Fill the deployment time-zone counter from stored lines (for databases made before it existed)."""
+    from .reader import Record
+    for r in eng.store.q("SELECT raw FROM raw WHERE raw IS NOT NULL AND id % 20 = 0"):
+        eng._see_zone(eng.analyse(Record("zones", 0, text=r["raw"]))[0])
+    eng.store.set_state("zones", dict(eng._zones))
+
+
 def cmd_replay(args) -> None:
     eng = open_engine(args)
+    if eng.settings.default_tz == "auto" and not eng._zones:
+        learn_zones(eng)
+        print("deployment time zone:", eng.deployment_tz())
     if args.source:
         print(eng.replay_source(args.source))
     else:

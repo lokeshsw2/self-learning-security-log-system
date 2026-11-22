@@ -22,6 +22,7 @@ from .reader import FileSource, Framer, Record
 from .store import SqliteStore, _j
 
 STRUCTURED = ("json", "kv", "cef", "leef", "delimited", "xml")
+_ZONE_TAIL = __import__("logparser.rx", fromlist=["x"]).compile(r"\d\d:\d\d(?:[.,]\d+)?\s*(Z|z|[+-]\d\d:?\d\d)$")
 DEFAULT_MAPPING = "mapping:default-base"
 MAX_SOURCES_PER_LABEL = 2000
 
@@ -54,6 +55,8 @@ class Engine:
         self._new_unstructured: set = set()
         self._queue_ops: list = []
         self._new_sigs: list = []           # (signature, group id) rows to persist
+        from collections import Counter as _C
+        self._zones = _C(store.get_state("zones", {}))
         from .family import Families
         self.families = Families(store, self.settings.family_threshold)
         self._dirty_stats: set = set()
@@ -502,8 +505,28 @@ class Engine:
             self._resolved[rule_id] = ocsf.resolve_mapping(r["body"], self.snap.rule) if r else None
         return self._resolved[rule_id]
 
+    def deployment_tz(self) -> str:
+        """The zone for times that carry none. With default_tz "auto": the offset of at least 90% of
+        the zoned header timestamps seen so far (100 or more), else UTC."""
+        if self.settings.default_tz != "auto":
+            return self.settings.default_tz
+        tot = sum(self._zones.values())
+        if tot >= 100:
+            off, n = self._zones.most_common(1)[0]
+            if n >= 0.9 * tot:
+                return off
+        return "UTC"
+
+    def _see_zone(self, det: Detection) -> None:
+        ts = det.header.get("@timestamp")
+        if isinstance(ts, str) and len(ts) > 19:
+            m = _ZONE_TAIL.search(ts)
+            if m:
+                z = m.group(1)
+                self._zones["+00:00" if z in ("Z", "z") else (z if ":" in z else z[:3] + ":" + z[3:])] += 1
+
     def _ctx(self, g: dict, rec: Record) -> dict:
-        ctx = {"now": self._clock(), "default_tz": self.settings.default_tz, "labels": g.get("labels") or {}}
+        ctx = {"now": self._clock(), "default_tz": self.deployment_tz(), "labels": g.get("labels") or {}}
         if self.settings.keep_raw_data:
             ctx["raw_data"] = rec.text
         return ctx
@@ -671,6 +694,7 @@ class Engine:
                 stats["directive"] += 1
                 continue
             det, source, cols = self.analyse(rec)
+            self._see_zone(det)
             sg = self._sign(det, rec.label, cols)
             if sg.family:
                 source = f"{source}#{sg.family}"
@@ -736,6 +760,7 @@ class Engine:
                              (rid_, ver, c[0], c[1], c[2]))
             self.store.set_state("batch", self.batch_no)
             self.store.set_state("columns", self.columns)
+            self.store.set_state("zones", dict(self._zones))
             for k, v in (state or {}).items():
                 self.store.set_state(k, v)
             self.store.commit()

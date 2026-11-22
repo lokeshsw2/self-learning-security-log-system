@@ -52,7 +52,7 @@ class Settings:
     shadow_min_lines: int = 2000
     shadow_min_ok: float = 0.995
     # Normalisation.
-    default_tz: str = "UTC"
+    default_tz: str = "auto"            # "auto": the offset of most zoned timestamps seen, else UTC
     max_line_len: int = 65536
     keep_raw_data: bool = False
     ocsf_version: str = "1.10.0"

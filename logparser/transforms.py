@@ -235,6 +235,12 @@ def prefix(value, args, ctx):
 _WIRE = rx.compile(r"\((\d{1,2})\)")
 
 
+def windows_filetime(value, args, ctx):
+    """Windows FILETIME (100-ns ticks since 1601-01-01 UTC) -> epoch milliseconds."""
+    n = to_int(value, {}, ctx)
+    return (n - 116444736000000000) // 10000
+
+
 def dns_name(value, args, ctx):
     """Windows DNS debug-log question name `(3)www(7)example(3)com(0)` -> `www.example.com`."""
     s = str(value).strip()
@@ -269,6 +275,7 @@ FUNCS = {
     "prefix": (prefix, {"prefix": str, "suffix": str}, []),
     "syslog_severity": (syslog_severity, {"from_pri": bool}, []),
     "dns_name": (dns_name, {}, []),
+    "windows_filetime": (windows_filetime, {}, []),
 }
 
 

@@ -103,6 +103,10 @@ Filled by code, do not map: `class_uid`, `category_uid`, `type_uid`,
 `time` falls back to the envelope `@timestamp`, then to ingest time. Values are
 cast to the schema type (string to integer and so on) when the cast is exact.
 
+Do not set `tz` in `parse_timestamp`: a time without a zone is read in the deployment's time
+zone, which the engine works out from the zoned timestamps it sees. The gate refuses a hard-coded
+zone.
+
 Meaning checks, also in the gate: the mapped `time` must be within an hour of every zoned
 timestamp in the line (header or field), and must not fall back to the ingest time when the line
 has a timestamp (set `"time_from_ingest_ok": true` only for sources that log no time at all). A
@@ -133,6 +137,7 @@ A `transform` is one step or a list of steps: `{"fn": name, "args": {...}}`.
 | `null_if` | `values` | drop the field when it equals one of the values, for example `["-", "N/A"]` |
 | `scale` | `factor`, `int` | multiply (seconds to milliseconds: 1000) |
 | `prefix` | `prefix`, `suffix` | add fixed text |
+| `windows_filetime` | | Windows FILETIME (18 digits, 100-ns ticks since 1601) to epoch milliseconds |
 | `dns_name` | | Windows DNS debug-log name `(3)www(7)example(3)com(0)` to `www.example.com` |
 | `syslog_severity` | `from_pri` | syslog PRI or severity 0-7 to OCSF `severity_id` |
 

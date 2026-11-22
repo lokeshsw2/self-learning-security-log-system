@@ -235,3 +235,16 @@ def test_gate_refuses_time_and_outcome_that_contradict_the_line(tmp_path):
     assert problems(d, {"action": "Deny"}, {**ev, "action_id": 2}, [], {}) == []
     assert "Success" in problems(d, {"action": "blocked"}, {**ev, "status_id": 1}, [], {})[0]
     assert problems(d, {"url": "/blocked-page"}, ev, [], {}) == []           # not an outcome field
+
+
+def test_forwarder_prefix_and_inferred_deployment_zone(tmp_path):
+    eng = make(tmp_path)
+    zoned = ['<13>1 2026-11-02T14:52:%02d+05:30 h app - - - x%d' % (i % 60, i) for i in range(120)]
+    feed(eng, tmp_path, zoned, name="z.log")
+    assert eng.deployment_tz() == "+05:30"
+    from logparser.detect import detect
+    d = detect(eng.snap, "[SIEM_FWD][VLC-DC01][10.10.1.1][ASA] Nov 02 2026 15:00:17 ASA-EDGE-01: %ASA-4-106023: Deny tcp src outside:1.2.3.4/1 dst inside:10.0.0.1/22 by access-group x [0x0, 0x0]")
+    assert d.header["@timestamp"] == "Nov 02 2026 15:00:17"
+    from logparser import transforms
+    assert transforms.parse_timestamp("Nov 02 2026 15:00:17", {}, {"default_tz": eng.deployment_tz()}) == 1793611817000
+    assert transforms.windows_filetime("134383922544214592", {}, {}) == 1793918654421

@@ -398,6 +398,12 @@ class Tools:
                     if sc is None or self.e.schema.attr_at(sc["name"], p) is None]
             if badp:
                 raise Refused(f"switch target {sw['use']} has paths that do not exist in its class: {badp[:10]}")
+        for f in body.get("fields", []):
+            steps = f.get("transform") or []
+            for st in ([steps] if isinstance(steps, dict) else steps):
+                if st["fn"] == "parse_timestamp" and (st.get("args") or {}).get("tz"):
+                    raise Refused(f"field {f['to']}: do not set `tz`; a time without a zone is read in the "
+                                  f"deployment's time zone, which the engine works out from zoned timestamps")
         missing = [f["to"] for f in body.get("fields", []) if not f.get("confidence") or not f.get("note")]
         if missing:
             raise Refused(f"every mapped field needs `confidence` and `note`; missing on: {missing[:15]}")
