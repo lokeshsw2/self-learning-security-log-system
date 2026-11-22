@@ -21,6 +21,8 @@ def main() -> None:
     ap.add_argument("scan")
     ap.add_argument("out")
     ap.add_argument("--cap", type=int, default=60)
+    ap.add_argument("--many", type=int, default=200, help="a source with this many raw patterns or more ...")
+    ap.add_argument("--cap-many", type=int, default=5, help="... gets this many copies per pattern")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     rng = random.Random(11)
@@ -32,8 +34,11 @@ def main() -> None:
         d = json.load(open(os.path.join(a.scan, f)))
         src = d["file"]
         out = []
+        # in a source with many raw patterns the variants differ by an unmasked name that the merge
+        # step folds in code, so a few copies of each are enough to exercise it
+        cap = a.cap if len(d["patterns"]) < a.many else a.cap_many
         for sig, p in d["patterns"].items():
-            copies = min(p["count"], a.cap)
+            copies = min(p["count"], cap)
             w = p["count"] / copies
             for i in range(copies):
                 s = p["samples"][i % len(p["samples"])]

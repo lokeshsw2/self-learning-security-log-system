@@ -248,3 +248,22 @@ def test_forwarder_prefix_and_inferred_deployment_zone(tmp_path):
     from logparser import transforms
     assert transforms.parse_timestamp("Nov 02 2026 15:00:17", {}, {"default_tz": eng.deployment_tz()}) == 1793611817000
     assert transforms.windows_filetime("134383922544214592", {}, {}) == 1793918654421
+
+
+def test_remask_joins_a_group_that_another_source_already_owns(tmp_path):
+    eng = make(tmp_path, auto_repair=False)
+    good = [f"Jan  1 00:00:{i:02d} h runner[9]: operator {u} ran /bin/x" for i, u in enumerate(["ann", "bob", "cid", "dan"] * 3)]
+    feed(eng, tmp_path, good, name="a.log", label="hosts")
+    src_a = eng.store.groups("merged_into IS NULL")[0]["source"]
+    t = Tools(eng)
+    t.save_mask(src_a, {"patterns": [{"name": "op", "pattern": r"operator ([a-z]+) ran", "placeholder": "<USER>", "group": 1}]})
+    owner = eng.store.groups("merged_into IS NULL")[0]
+    t.save_parser(owner["signature"], {"kind": "regex", "pattern": r"^operator (?P<user>\S+) ran (?P<cmd>.+)$"})
+    odd = [f"Jan  1 00:01:{i:02d} h runner[9]: operator {u}'x ran /bin/x" for i, u in enumerate(["eve", "fay", "gus"] * 2)]
+    feed(eng, tmp_path, odd, name="b.log", label=None)       # unlabelled stream, names the mask misses
+    src_b = [s["source"] for s in eng.store.sources() if s["source"].startswith("-|")][0]
+    t.save_mask(src_b, {"patterns": [{"name": "op", "pattern": r"operator ([a-z']+) ran", "placeholder": "<USER>", "group": 1}]})
+    live = eng.store.groups("merged_into IS NULL")
+    assert [g["signature"] for g in live] == [owner["signature"]]              # one group, the owner kept its id
+    assert set(eng.store.signature_map().values()) == {owner["signature"]}
+    assert eng.store.q("SELECT COUNT(*) n FROM raw WHERE status='parsed'")[0]["n"] == 18   # the odd lines use its parser

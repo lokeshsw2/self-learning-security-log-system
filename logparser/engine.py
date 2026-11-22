@@ -1149,6 +1149,19 @@ class Engine:
         # assign group ids: an unchanged signature keeps its group; then the biggest new
         # signatures claim the old group that gave them the most lines (one with rules first)
         claimed: dict = {n: n for n in plan if n in old}
+        # a signature that already leads to a live group outside this source joins that group:
+        # the same content can sit under several source keys (a labelled and an unlabelled stream)
+        external: set = set()
+        for nsig in plan:
+            if nsig in claimed:
+                continue
+            owner = self.alias.get(nsig, nsig if nsig in self.groups else None)
+            og = self.groups.get(owner) if owner else None
+            while og is not None and og["merged_into"]:
+                og = self.groups.get(og["merged_into"])
+            if og is not None and og["signature"] not in old and og["source"] != source:
+                claimed[nsig] = og["signature"]
+                external.add(og["signature"])
         taken = set(claimed.values())
         for nsig, e in sorted(plan.items(), key=lambda kv: -len(kv[1]["rows"])):
             if nsig in claimed:
@@ -1187,7 +1200,9 @@ class Engine:
         for nsig, e in plan.items():
             det, sg = e["det"], e["sg"]
             gid = claimed.get(nsig)
-            if gid:
+            if gid in external:
+                g = self.groups[gid]          # another source's group: leave its template and rules as they are
+            elif gid:
                 g = self.groups[gid]
                 keep = {k: g["detail"][k] for k in ("ambiguous", "cooldown_until", "merged") if k in g["detail"]}
                 g["template"], g["bucket"], g["format"] = sg.template, det.bucket, det.format
