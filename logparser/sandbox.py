@@ -23,7 +23,6 @@ import uuid
 from .logstash import rb
 from .logstash_rb import RUBY_LIB
 
-BREW = "/opt/homebrew/Cellar/logstash"
 # Logstash substitutes ${VAR} from its environment: the sandbox gets only what a JVM needs, no secrets
 ENV_KEEP = ("PATH", "HOME", "JAVA_HOME", "LS_JAVA_HOME", "TMPDIR", "LANG", "LC_ALL", "USER")
 
@@ -48,9 +47,11 @@ _ERR = re.compile(r'error: "((?:[^"\\]|\\.)*)"|Ruby exception occurred: ([^{]+)'
 
 class Sandbox:
     def __init__(self, workdir: str, http_port: int = 18080, api_port: int = 9611, heap: str = "1g",
-                 logstash: str = "/opt/homebrew/bin/logstash"):
+                 logstash: str | None = None):
         self.dir = os.path.abspath(workdir)
-        self.http_port, self.api_port, self.heap, self.bin = http_port, api_port, heap, logstash
+        from .lsenv import logstash_bin
+        self.http_port, self.api_port, self.heap = http_port, api_port, heap
+        self.bin = logstash or logstash_bin()
         self.proc = None
         self.lock = threading.Lock()
 
@@ -88,16 +89,16 @@ class Sandbox:
         with open(os.path.join(self.dir, "pipelines.yml"), "w") as fh:
             fh.write(f'- pipeline.id: sandbox\n  path.config: "{self.dir}/sandbox.conf"\n  pipeline.workers: 1\n')
         self._write_conf("", "{}", "idle")
+        from .lsenv import config_file
         for name in ("jvm.options", "log4j2.properties"):
-            for ver in sorted(os.listdir(BREW)) if os.path.isdir(BREW) else []:
-                src = os.path.join(BREW, ver, "libexec", "config", name)
-                if os.path.exists(src):
-                    txt = open(src).read()
-                    if name == "jvm.options":
-                        txt = re.sub(r"(?m)^-Xms\S+", f"-Xms{self.heap}", txt)
-                        txt = re.sub(r"(?m)^-Xmx\S+", f"-Xmx{self.heap}", txt)
-                    with open(os.path.join(self.dir, name), "w") as fh:
-                        fh.write(txt)
+            src = config_file(name)
+            if src:
+                txt = open(src).read()
+                if name == "jvm.options":
+                    txt = re.sub(r"(?m)^-Xms\S+", f"-Xms{self.heap}", txt)
+                    txt = re.sub(r"(?m)^-Xmx\S+", f"-Xmx{self.heap}", txt)
+                with open(os.path.join(self.dir, name), "w") as fh:
+                    fh.write(txt)
         log = open(os.path.join(self.dir, "stdout.log"), "w")
         env = {k: os.environ[k] for k in ENV_KEEP if k in os.environ}
         self.proc = subprocess.Popen([self.bin, "--path.settings", self.dir], stdout=log, stderr=subprocess.STDOUT,

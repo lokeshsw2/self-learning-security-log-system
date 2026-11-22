@@ -1,6 +1,7 @@
 """Copy what the agents learned in one database (e.g. a test copy) into another.
 
   python scripts/promote_rules.py --from work/learn_test/test3.db --to work/app.db [--dry-run]
+  python scripts/promote_rules.py --from local.db --to "mysql://lp:${MYSQL_PASSWORD}@db.host:3306/logparser"
 
 Copies:
 - active rules that the target lacks or holds with a different body (validated first,
@@ -21,7 +22,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from logparser import registry  # noqa: E402
-from logparser.store import SqliteStore  # noqa: E402
+from logparser.store import open_store  # noqa: E402
 
 
 def natural_ids(db: str, rule_ids: list) -> dict:
@@ -33,7 +34,7 @@ def natural_ids(db: str, rule_ids: list) -> dict:
     out = {}
     for rid in rule_ids:
         kind, _, sig = rid.partition(":")
-        if kind not in ("parser", "mapping", "longtail") or sig not in e.groups:
+        if kind not in ("parser", "mapping", "longtail", "lsfilter") or sig not in e.groups:
             continue
         g = e.groups[sig]
         if g["detail"].get("parent"):
@@ -59,7 +60,7 @@ def main() -> None:
     ap.add_argument("--to", dest="dst", required=True)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
-    src, dst = SqliteStore(a.src), SqliteStore(a.dst)
+    src, dst = open_store(a.src), open_store(a.dst)
 
     rules = []
     for r in src.rules(status="active"):
@@ -67,7 +68,7 @@ def main() -> None:
         if cur and cur["body"] == r["body"]:
             continue
         meta = dict(r["meta"] or {})
-        meta["imported_from"] = os.path.basename(a.src)
+        meta["imported_from"] = os.path.basename(a.src) if not a.src.startswith("mysql") else src.path
         rules.append({"rule_id": r["rule_id"], "status": "active", "body": r["body"], "meta": meta})
 
     # A merged group keeps an old id; a fresh database computes the id from the current masks.

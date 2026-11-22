@@ -8,7 +8,7 @@ PID="$DIR/logstash.pid"
 case "$1" in
   start)
     [ -f "$DIR/pipelines.yml" ] || { echo "no pipelines deployed in $DIR yet"; exit 1; }
-    nohup /opt/homebrew/bin/logstash --path.settings "$DIR" > "$DIR/stdout.log" 2>&1 &
+    nohup "${LP_LOGSTASH_BIN:-/opt/homebrew/bin/logstash}" --path.settings "$DIR" > "$DIR/stdout.log" 2>&1 &
     echo $! > "$PID"; echo "starting (log: $DIR/stdout.log)";;
   stop)
     [ -f "$PID" ] && { kill "$(cat "$PID")" 2>/dev/null || true; rm -f "$PID"; }

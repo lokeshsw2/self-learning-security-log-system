@@ -465,3 +465,16 @@ def test_failed_lines_of_deployed_pipelines_get_their_own_topic():
     assert any("lpsvc.ls_failures " in s and "MergeTree" in s for s in sts)
     assert any("kafka_topic_list = 'logs.ls_failed'" in s for s in sts)
     assert not any("ls_failures" in s for s in statements("lpsvc", "b:1", "logs.parsed", "g"))
+
+
+def test_logstash_location_comes_from_the_environment(tmp_path, monkeypatch):
+    from logparser import lsenv
+    fake = tmp_path / "ls" / "bin" / "logstash"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\n")
+    (tmp_path / "ls" / "config").mkdir()
+    (tmp_path / "ls" / "config" / "jvm.options").write_text("-Xms1g\n-Xmx1g\n")
+    monkeypatch.setenv("LP_LOGSTASH_BIN", str(fake))
+    monkeypatch.setenv("LP_LOGSTASH_HOME", str(tmp_path / "ls"))
+    assert lsenv.logstash_bin() == str(fake)
+    assert lsenv.config_file("jvm.options") == str(tmp_path / "ls" / "config" / "jvm.options")

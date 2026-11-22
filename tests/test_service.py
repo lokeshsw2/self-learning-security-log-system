@@ -129,6 +129,14 @@ def test_config_is_checked(tmp_path):
     assert cfg.is_mysql() and "***" in cfg.redacted()["store"]["url"]
     with pytest.raises(ValueError, match="not a SQLite path"):
         cfg.sqlite_path()
+    cfg.store = {"url": "sqlite:///x.db"}
+    cfg.kafka.logstash_extra = {"security.protocol": "SASL_SSL"}
+    with pytest.raises(ValueError, match="logstash_extra"):
+        cfg.validate()
+    cfg.kafka.logstash_extra = {"security_protocol": "SASL_SSL", "sasl_jaas_config": "${KAFKA_JAAS}"}
+    cfg.validate()
+    assert cfg.redacted()["kafka"]["logstash_extra"] == {"security_protocol": "SASL_SSL", "sasl_jaas_config": "***"}
+    cfg.kafka.logstash_extra = {}
     cfg.store = {"url": "postgres://x/y"}
     with pytest.raises(ValueError, match="store.url"):
         cfg.validate()

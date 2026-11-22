@@ -188,7 +188,8 @@ def run_logstash(gen, lines: list, work: str, root: str, timeout: float = 900.0)
     env = dict(os.environ, LP_NOW=str(NOW))
     log = open(os.path.join(d, "ls.log"), "w")
     t0 = time.time()
-    proc = subprocess.Popen(["/opt/homebrew/bin/logstash", "--path.settings", d], stdout=log, stderr=subprocess.STDOUT,
+    from logparser.lsenv import logstash_bin
+    proc = subprocess.Popen([logstash_bin(), "--path.settings", d], stdout=log, stderr=subprocess.STDOUT,
                             env=env, start_new_session=True)
     n = len(lines)
     first = last = None

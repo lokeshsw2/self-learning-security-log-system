@@ -1239,19 +1239,17 @@ def write_set(gen: Generated, out_dir: str, *, root: str, test: dict | None = No
             with open(os.path.join(out_dir, name), "w") as fh:
                 fh.write(text)
     # settings so `logstash --path.settings <dir>` works and reloads config on change
-    brew = "/opt/homebrew/Cellar/logstash"
+    from .lsenv import config_file
     for name in ("jvm.options", "log4j2.properties"):
         dst = os.path.join(out_dir, name)
-        if os.path.isdir(brew) and not os.path.exists(dst):
-            for ver in sorted(os.listdir(brew)):
-                src = os.path.join(brew, ver, "libexec", "config", name)
-                if os.path.exists(src):
-                    with open(src) as a, open(dst, "w") as b:
-                        txt = a.read()
-                        if name == "jvm.options":      # many pipelines with large configs need more than 1g
-                            txt = re.sub(r"(?m)^-Xms\S+", f"-Xms{heap}", txt)
-                            txt = re.sub(r"(?m)^-Xmx\S+", f"-Xmx{heap}", txt)
-                        b.write(txt)
+        src = config_file(name)
+        if src and not os.path.exists(dst):
+            with open(src) as a, open(dst, "w") as b:
+                txt = a.read()
+                if name == "jvm.options":      # many pipelines with large configs need more than 1g
+                    txt = re.sub(r"(?m)^-Xms\S+", f"-Xms{heap}", txt)
+                    txt = re.sub(r"(?m)^-Xmx\S+", f"-Xmx{heap}", txt)
+                b.write(txt)
     with open(os.path.join(out_dir, "logstash.yml"), "w") as fh:
         fh.write(f'path.data: "{os.path.join(out_dir, "data")}"\npath.logs: "{os.path.join(out_dir, "logs")}"\n'
                  'config.reload.automatic: true\nconfig.reload.interval: 10s\napi.enabled: false\n')

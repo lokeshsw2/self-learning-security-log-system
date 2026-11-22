@@ -21,7 +21,7 @@ import re
 from dataclasses import asdict, dataclass, field
 
 _ENV = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
-SECRET_KEYS = re.compile(r"pass|secret|token|key|sasl\.jaas", re.I)
+SECRET_KEYS = re.compile(r"pass|secret|token|key|sasl[._]jaas", re.I)
 
 
 def _env(value):
@@ -46,6 +46,9 @@ class KafkaConfig:
     partitions: int = 4
     idle_flush_s: float = 60.0            # quiet this long: small groups still without a rule go to the long tail
     extra: dict = field(default_factory=dict)   # client settings (security, SASL...); "${ENV}" values allowed
+    # the same for the Logstash kafka plugins, in their own option names (security_protocol, sasl_mechanism,
+    # sasl_jaas_config, ssl_truststore_location ...); "${ENV}" is left for Logstash to fill from its environment
+    logstash_extra: dict = field(default_factory=dict)
 
     def client_extra(self) -> dict:
         return {k: _env(v) for k, v in self.extra.items()}
@@ -127,6 +130,9 @@ class ServiceConfig:
             raise ValueError("learning.interval_s and learning.limit must be positive, fix_rounds >= 0")
         if lc.budget_usd_per_cycle < 0 or lc.budget_usd_per_day < 0:
             raise ValueError("learning budgets cannot be negative")
+        bad = [k for k in self.kafka.logstash_extra if not re.fullmatch(r"[a-z_]+", k)]
+        if bad:
+            raise ValueError(f"kafka.logstash_extra: Logstash kafka plugin option names, like security_protocol: {bad}")
         if self.kafka.batch_max <= 0 or self.kafka.idle_flush_s < 0:
             raise ValueError("kafka.batch_max must be positive and idle_flush_s >= 0")
         unknown = set(self.store) - {"url"}
@@ -138,7 +144,9 @@ class ServiceConfig:
     def redacted(self) -> dict:
         """The configuration with secret-looking client settings hidden (for status pages and logs)."""
         d = copy.deepcopy(asdict(self))
-        d["kafka"]["extra"] = {k: ("***" if SECRET_KEYS.search(k) else v) for k, v in d["kafka"]["extra"].items()}
+        for part in ("extra", "logstash_extra"):
+            d["kafka"][part] = {k: ("***" if SECRET_KEYS.search(k) else v)
+                                for k, v in d["kafka"][part].items()}
         d["store"] = {"url": re.sub(r"//([^:/@]+):[^@]+@", r"//\1:***@", d["store"].get("url", ""))}
         return d
 
