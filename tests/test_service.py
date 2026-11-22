@@ -356,3 +356,24 @@ def test_agents_with_nothing_waiting_pass_their_share_on(tmp_path):
     report = learn(h, ["parser-gen", "ocsf-mapping", "source-naming"], 30, "claude-sonnet-5-5", fix_rounds=0)
     assert report["parser-gen"] == {"skipped": "nothing waiting"}
     assert report["source-naming"]["allotted_usd"] == pytest.approx(0.20)   # the whole budget, nothing else to do
+
+
+def test_direct_variant_runs_the_filter_writer_not_the_rule_agents(tmp_path, monkeypatch):
+    from logparser.service import runner
+    from logparser.service.config import ServiceConfig
+    cfg = ServiceConfig()
+    cfg.store = {"url": f"sqlite:///{tmp_path}/s.db"}
+    cfg.logstash.variant = "direct"
+    cfg.learning.enabled = True
+    seen = {}
+
+    def fake_learn(h, roles, *a, **k):
+        seen["roles"] = roles
+        return {}
+    import logparser.harness as harness
+    monkeypatch.setattr(harness, "learn", fake_learn)
+    svc = runner.LearnerService(cfg, consumer=FakeConsumer([]), model_client=CostingClient())
+    svc.learn_cycle()
+    assert seen["roles"] == ["detection", "source-naming", "grouping-repair", "ls-direct"]
+    cfg.learning.roles = ["ls-direct"]
+    cfg.validate()

@@ -119,9 +119,9 @@ class ServiceConfig:
         from ..harness import ORDER
         lc = self.learning
         if lc.roles != "all":
-            bad = [r for r in lc.roles if r not in ORDER + ["longtail"]]
+            bad = [r for r in lc.roles if r not in ORDER + ["longtail", "ls-direct"]]
             if bad:
-                raise ValueError(f"learning.roles: unknown roles {bad}; known: {ORDER + ['longtail']}")
+                raise ValueError(f"learning.roles: unknown roles {bad}; known: {ORDER + ['longtail', 'ls-direct']}")
         if lc.interval_s <= 0 or lc.limit <= 0 or lc.fix_rounds < 0:
             raise ValueError("learning.interval_s and learning.limit must be positive, fix_rounds >= 0")
         if lc.budget_usd_per_cycle < 0 or lc.budget_usd_per_day < 0:

@@ -234,7 +234,12 @@ class LearnerService:
         budget = max(0.0, min(lc.budget_usd_per_cycle, lc.budget_usd_per_day - self._spent_today()))
         with self.lock:
             gen_before = int(self.eng.store.get_state("registry_generation", 0))
-        roles = ORDER + ["longtail"] if lc.roles == "all" else list(lc.roles)
+        if lc.roles != "all":
+            roles = list(lc.roles)
+        elif self.cfg.logstash.variant == "direct":     # Variant B: agents write the Logstash filters themselves
+            roles = ["detection", "source-naming", "grouping-repair", "ls-direct"]
+        else:
+            roles = ORDER + ["longtail"]
         t0 = self.clock()
         h = None
         entry = {"at": t0, "budget_usd": round(budget, 4)}

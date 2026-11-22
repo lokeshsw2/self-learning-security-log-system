@@ -31,7 +31,7 @@ def main() -> None:
         ensure_ingest(cfg.clickhouse.url, cfg.clickhouse.database, cfg.kafka.bootstrap, cfg.kafka.parsed_topic)
     svc = LearnerService(cfg)
     deployer = None
-    if cfg.logstash.variant == "compiled" and cfg.logstash.deploy:
+    if cfg.logstash.deploy:                     # both variants: verify, then swap in and replay
         from .deploy import Deployer
         deployer = Deployer(svc)
         svc.on_rules_changed = deployer.deploy
