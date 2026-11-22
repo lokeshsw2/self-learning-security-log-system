@@ -27,6 +27,8 @@ A source rule
   before any `#family`). The program name or CEF vendor/product is in the bucket after the last `|`.
 - `requires`: decoded field names that must be present with a non-empty value (dotted paths for
   nested JSON; null and empty values do not count, so pick fields that always carry a value).
+- `text`: an RE2 pattern the line's payload must match (for plain-text sources that have no decoded
+  fields yet; `decoded_samples` in `get-samples` shows the payload and the fields a rule can test).
 - `values`: RE2 patterns that named fields must match. Envelope fields start with `@`
   (`@host`, `@app`, `@msgid`, `@cisco_mnemonic`, ...).
 

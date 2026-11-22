@@ -593,6 +593,8 @@ class Engine:
         m = body["match"]
         if not rx.compile(m["bucket"]).search(det.bucket):
             return False
+        if m.get("text") and not rx.compile(m["text"]).search(det.payload):
+            return False
         fields = {**(sg.parsed or {}), **det.header}
         if any(fields.get(k) in (None, "") for k in m.get("requires") or ()):
             return False

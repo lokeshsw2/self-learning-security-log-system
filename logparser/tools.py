@@ -139,10 +139,17 @@ class Tools:
         picked = rows[::step][:limit]
         tops = self.store.q("SELECT template, count FROM groups WHERE source=? AND merged_into IS NULL "
                             "ORDER BY count DESC LIMIT 15", (source,))
+        decoded = []
+        for r in picked[:2]:                 # what a source rule can test: decoded and envelope fields
+            det, _, cols = self.e.analyse(self._rec(r))
+            sg = self.e._sign(det, self._rec(r).label, cols)
+            decoded.append({"bucket": det.bucket, "payload": _clip(det.payload)[:300],
+                            "fields": {k: (str(v)[:80]) for k, v in list({**(sg.parsed or {}), **det.header}.items())[:40]}})
         self._log("get_samples", source, True)
         return {"notice": NOTICE, "source": source, "lines": len(rows), "signatures": src["signatures"],
                 "quarantined": bool(src["quarantined"]), "reason": src["reason"],
                 "current_templates": [{"template": _clip(t["template"])[:300], "count": t["count"]} for t in tops],
+                "decoded_samples": decoded,
                 "samples": [_clip(r["raw"]) for r in picked]}
 
     # ------------------------------------------------------------ mask repair

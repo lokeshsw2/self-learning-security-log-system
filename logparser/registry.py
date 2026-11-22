@@ -108,7 +108,8 @@ SCHEMAS: dict[str, dict] = {
         "match": {"type": "object", "required": ["bucket"], "additionalProperties": False, "properties": {
             "bucket": {"type": "string"},
             "requires": {"type": "array", "items": {"type": "string"}, "maxItems": 12},
-            "values": {"type": "object", "additionalProperties": {"type": "string"}, "maxProperties": 6}}}}},
+            "values": {"type": "object", "additionalProperties": {"type": "string"}, "maxProperties": 6},
+            "text": {"type": "string"}}}}},
     "split": {"type": "object", "additionalProperties": False, "properties": {
         "fields": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
         "presence": {"type": "array", "items": {"type": "string"}, "maxItems": 4}}},
@@ -232,6 +233,8 @@ def validate_rule(kind: str, body: Any) -> None:
         err = rx.check(body["match"]["bucket"])
         if err:
             raise RuleError(f"match.bucket: {err}")
+        if body["match"].get("text") and rx.check(body["match"]["text"]):
+            raise RuleError(f"match.text: {rx.check(body['match']['text'])}")
         for k, p in (body["match"].get("values") or {}).items():
             if rx.check(p):
                 raise RuleError(f"match.values.{k}: {rx.check(p)}")
