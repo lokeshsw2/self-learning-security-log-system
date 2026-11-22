@@ -644,6 +644,48 @@ class Tools:
                 "pieces": [{"group": k["signature"], "key": k["detail"]["split_key"], "lines": k["count"]} for k in kids],
                 "note": "each piece is now its own group in needs-mapping"}
 
+    # ------------------------------------------------------------ grouping repair (agent 1)
+    def get_stats(self, group: str) -> dict:
+        """Per-field counters of a group and what code makes of them."""
+        g = self._group(group)
+        st = g["_stats"] if g.get("_stats") is not None else self.store.stats(g["signature"])
+        cls = self.e.classify(g)
+        fields = {}
+        for k, f in st.items():
+            fields[k] = {"class": cls.get(k), "lines": f["n"], "kinds": f["kinds"],
+                         "distinct": "many" if f["over"] else len(f["vals"]),
+                         "top_values": dict(sorted(f["vals"].items(), key=lambda kv: -kv[1])[:8])}
+        self._log("get_stats", group, True)
+        return {"notice": NOTICE, "group": g["signature"], "count": g["count"], "template": _clip(g["template"])[:300],
+                "cooldown_until_batch": g["detail"].get("cooldown_until"), "batch": self.e.batch_no,
+                "fields": fields}
+
+    def get_decisions(self, source: str) -> dict:
+        """Answers already given for this source, so no question is asked twice."""
+        rows = self.store.decisions(source) + self.store.decisions(source.split("|", 1)[1] if "|" in source else source)
+        seen, out = set(), []
+        for r in rows:
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                out.append({k: r[k] for k in ("scope", "question", "answer", "answered_by", "tier")})
+        ops = [dict(r) for r in self.store.q(
+            "SELECT id, batch, op, target, status, tier, by, verification FROM operations ORDER BY id DESC LIMIT 30")]
+        self._log("get_decisions", source, True)
+        return {"decisions": out, "recent_operations": ops}
+
+    def test_operation(self, op: dict) -> dict:
+        from . import repair
+        res = repair.test(self.e, op, self.agent)
+        self._log("test_operation", op.get("op") if isinstance(op, dict) else None, bool(res.get("ok")))
+        return res
+
+    def save_operation(self, op: dict) -> dict:
+        """Apply a grouping operation. Accepted only if the replay check passes."""
+        from . import repair
+        res = repair.apply(self.e, op, self.agent)
+        self._log("save_operation", op.get("op"), True, json.dumps(res, default=str)[:300])
+        return res
+
     def report_problem(self, group: str, to: str, note: str) -> dict:
         """Hand an item to another agent's queue with the reason attached."""
         if to not in ("needs-parser", "needs-mapping"):
@@ -810,6 +852,14 @@ def main(argv=None) -> None:
             out = t.test_split(a.group, body)
         elif tool == "save_split":
             out = t.save_split(a.group, body, a.note)
+        elif tool == "get_stats":
+            out = t.get_stats(a.group)
+        elif tool == "get_decisions":
+            out = t.get_decisions(a.source)
+        elif tool == "test_operation":
+            out = t.test_operation(body)
+        elif tool == "save_operation":
+            out = t.save_operation(body)
         elif tool == "report_problem":
             out = t.report_problem(a.group, a.to, a.note)
         elif tool == "label_group":

@@ -95,7 +95,7 @@ def test_export_import_roundtrip(tmp_path):
 # ---------------------------------------------------------------- detection and signatures
 @pytest.mark.parametrize("line,chain,fmt", [
     ("Aug  3 10:49:35 Barracuda CEF: 0|Barracuda|WAAS|1.0|WAF|WAF|4| src=1.2.3.4 spt=4", ["cef"], "cef"),
-    ('<5>1 2021-03-08T18:24:49Z VAULT {"format":"elastic","version":"1.0"}', ["syslog5424_short", "json"], "json"),
+    ('<5>1 2021-03-08T18:24:49Z VAULT {"format":"elastic","version":"1.0"}', ["embedded_json"], "json"),
     ('<189>date=2020-04-23 time=12:32:48 devname="sw3" type="event" subtype="user" level="notice"',
      ["pri_only", "kv"], "kv"),
     ("Oct 10 2018 12:34:56 localhost CiscoASA[999]: %ASA-6-305011: Built dynamic TCP translation from "
@@ -288,8 +288,8 @@ def test_format_drift_attaches_to_existing_group(tmp_path):
     assert out["parsed"] == 1
     live = eng.store.groups("merged_into IS NULL")
     assert len(live) == 1 and live[0]["count"] == 5
-    v = eng.store.groups("status='variant'")[0]
-    assert v["drift_of"] == live[0]["signature"]
+    sigs = eng.store.signature_map()            # two signatures, one group: the group id did not change
+    assert len(sigs) == 2 and set(sigs.values()) == {live[0]["signature"]}
     assert json.loads(eng.store.q("SELECT fields FROM events ORDER BY raw_id DESC")[0]["fields"])["vlan"] == 7
 
 

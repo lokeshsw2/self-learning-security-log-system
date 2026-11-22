@@ -53,6 +53,8 @@ class Engine:
         self._dirty_sources: set = set()
         self._new_unstructured: set = set()
         self._queue_ops: list = []
+        self._new_sigs: list = []           # (signature, group id) rows to persist
+        self._dirty_stats: set = set()
         self._load()
 
     # ------------------------------------------------------------ state
@@ -61,6 +63,7 @@ class Engine:
             g["_samples"] = None
             g["_tokens"] = None
             self.groups[g["signature"]] = g
+            g["_stats"] = None
             if g["merged_into"]:
                 self.alias[g["signature"]] = g["merged_into"]
             else:
@@ -69,6 +72,9 @@ class Engine:
                 if g["format"] == "unstructured" and "<*>" in g["template"] and not g["detail"].get("parent"):
                     toks = g["template"].split()
                     self.merged_index.setdefault((g["bucket"], len(toks)), []).append((toks, g["signature"]))
+        for sig, gid in self.store.signature_map().items():
+            if sig != gid:
+                self.alias[sig] = gid
         for s in self.store.sources():
             self.sources[s["source"]] = s
             self.label_sources.setdefault(s["source"].split("|", 1)[0], set()).add(s["source"])
@@ -89,12 +95,19 @@ class Engine:
             seen += 1
         return self.groups.get(sig)
 
+    def _link(self, sig: str, gid: str) -> None:
+        """Point a signature at a group. Many signatures can lead to one group."""
+        if sig != gid:
+            self.alias[sig] = gid
+        self._new_sigs.append((sig, gid))
+
     def _samples(self, g: dict) -> list:
         if g["_samples"] is None:
-            g["_samples"] = [(r["raw_id"], r["raw"]) for r in self.store.samples(g["signature"])]
+            g["_samples"] = [(r["raw_id"], r["raw"], r["tag"], r["masked"])
+                             for r in self.store.samples(g["signature"], tags=True)]
             toks = set()
-            for _, t in g["_samples"]:
-                toks |= _tokens(t)
+            for smp in g["_samples"]:
+                toks |= _tokens(smp[1])
             g["_tokens"] = toks
         return g["_samples"]
 
@@ -124,7 +137,7 @@ class Engine:
              "template": sg.template, "detail": dict(sg.detail), "count": 0,
              "first_batch": self.batch_no, "last_batch": self.batch_no, "status": "new",
              "parser_rule": None, "mapping_rule": None, "merged_into": None, "drift_of": None,
-             "labels": {}, "parse_failures": 0, "_samples": [], "_tokens": set()}
+             "labels": {}, "parse_failures": 0, "_samples": [], "_tokens": set(), "_stats": {}}
         if det.dialect:
             g["detail"]["dialect"] = det.dialect
         if det.delimiter:
@@ -149,8 +162,7 @@ class Engine:
             toks = sg.template.split()
             for mtoks, msig in self.merged_index.get((det.bucket, len(toks)), ()):
                 if all(a == "<*>" or a == b for a, b in zip(mtoks, toks)):
-                    if len(self.alias) < 200000:
-                        self.alias[sig] = msig
+                    self._link(sig, msig)
                     return self.groups[msig]
         elif sg.detail.get("sig_keys") and det.format in ("json", "kv", "xml"):
             keys = set(sg.detail["sig_keys"])
@@ -168,23 +180,18 @@ class Engine:
                 if j > best_j:
                     best, best_j = o, j
             if best is not None and best_j >= self.settings.drift_overlap:
-                v = self._new_group(sig, det, sg, source)
-                v["status"] = "variant"
-                v["merged_into"] = best["signature"]
-                v["drift_of"] = best["signature"]
-                v["detail"]["overlap"] = round(best_j, 3)
-                self.alias[sig] = best["signature"]
+                # format drift: a new signature of the same group, not a new group
+                self._link(sig, best["signature"])
+                best["detail"]["drift_signatures"] = best["detail"].get("drift_signatures", 0) + 1
                 return best
         if det.format == "unstructured":
             sib = self._sibling(det, sg)
             if sib is not None:
-                v = self._new_group(sig, det, sg, source)
-                v["status"] = "merged"
-                v["merged_into"] = sib["signature"]
-                self.alias[sig] = sib["signature"]
+                self._link(sig, sib["signature"])
                 return sib
         g = self._new_group(sig, det, sg, source, columns)
         self._register(g)
+        self._link(sig, sig)
         if det.format == "unstructured":
             self._new_unstructured.add(det.bucket)
         self._bind(g, det, sg, fields, columns)
@@ -242,7 +249,7 @@ class Engine:
                      "status": "mapped" if g["mapping_rule"] else "parsed",
                      "parser_rule": g["parser_rule"], "mapping_rule": g["mapping_rule"], "merged_into": None,
                      "drift_of": None, "labels": dict(g["labels"]), "parse_failures": 0,
-                     "_samples": [], "_tokens": set()}
+                     "_samples": [], "_tokens": set(), "_stats": {}}
             self.groups[csig] = child
             self._register(child)
             self._dirty_groups.add(csig)
@@ -314,6 +321,12 @@ class Engine:
         """Give a new group the rules that need no AI: an auto parser for a
         structured format, or a seeded rule whose scope and pattern fit."""
         from . import rx
+        learned_p, learned_m = self.snap.rule("parser:" + g["signature"]), self.snap.rule("mapping:" + g["signature"])
+        if learned_p:            # a rule learned earlier (or elsewhere) for exactly this signature
+            g["parser_rule"] = learned_p["rule_id"]
+            g["mapping_rule"] = learned_m["rule_id"] if learned_m else None
+            g["status"] = "mapped" if learned_m else "parsed"
+            return
         if det.format in STRUCTURED:
             body = parsers.auto_parser(det, columns)
             for r in self.snap.seed_parsers:   # a seeded structured parser (named columns) wins
@@ -348,6 +361,9 @@ class Engine:
                     g["mapping_rule"] = b.get("mapping")
                     g["status"] = "mapped" if g["mapping_rule"] else "parsed"
                     break
+        if g["parser_rule"] and not g["mapping_rule"] and learned_m:
+            g["mapping_rule"] = learned_m["rule_id"]
+            g["status"] = "mapped"
         if g["parser_rule"] and not g["mapping_rule"]:
             probe = fields
             if probe is None:
@@ -375,24 +391,106 @@ class Engine:
         return all(k in fields for k in req) and not any(k in fields for k in absent) \
             and all(str(fields.get(k)) == str(v) for k, v in eq.items())
 
-    def _sample(self, g: dict, rid: int, text: str) -> None:
+    def _sample(self, g: dict, rid: int, text: str, masked: str | None = None, fields: dict | None = None,
+                failure: bool = False) -> None:
+        """Keep a small, useful set of raw lines per group:
+        diverse (lines that add new tokens), recent (a reservoir that newer
+        batches refresh, so drift shows), value:<field>=<v> (a few lines per
+        recurring value of an ambiguous field) and failure (kept apart)."""
         samples = self._samples(g)
         cap = self.settings.samples_max
+        if failure:
+            fails = [x for x in samples if x[2] == "failure"]
+            if len(fails) < 10:
+                samples.append((rid, text, "failure", masked))
+                self._dirty_samples.add(g["signature"])
+            return
+        h = int(hashlib.md5(text.encode("utf-8", "replace")).hexdigest()[:8], 16)
+        changed = False
+        diverse = sum(1 for x in samples if x[2] == "diverse")
         toks = _tokens(text)
         novel = toks - g["_tokens"]
-        if len(samples) < 5 or (len(samples) < cap and novel):
-            samples.append((rid, text))
-        elif len(samples) >= cap and novel:
-            h = int(hashlib.md5(text.encode("utf-8", "replace")).hexdigest()[:8], 16)
-            if h % max(g["count"], 1) < cap:
-                samples[3 + h % (cap - 3)] = (rid, text)
-            else:
-                return
+        if diverse < 5 or (diverse < cap and novel):
+            samples.append((rid, text, "diverse", masked))
+            changed = True
+            if len(g["_tokens"]) < 5000:
+                g["_tokens"] |= toks
         else:
-            return
-        if len(g["_tokens"]) < 5000:
-            g["_tokens"] |= toks
-        self._dirty_samples.add(g["signature"])
+            recent = [i for i, x in enumerate(samples) if x[2] == "recent"]
+            if len(recent) < 6:
+                samples.append((rid, text, "recent", masked))
+                changed = True
+            elif h % 16 == 0:                    # reservoir: newer lines replace the oldest recent one
+                samples.pop(recent[0])
+                samples.append((rid, text, "recent", masked))
+                changed = True
+        for fld in (g["detail"].get("ambiguous") or ()) if fields else ():
+            v = fields.get(fld)
+            if v in (None, ""):
+                continue
+            tag = f"value:{fld}={str(v)[:40]}"
+            if sum(1 for x in samples if x[2] == tag) < 2 and sum(1 for x in samples if x[2].startswith("value:")) < 30:
+                samples.append((rid, text, tag, masked))
+                changed = True
+        if changed:
+            self._dirty_samples.add(g["signature"])
+
+    # ------------------------------------------------------------ group statistics
+    @staticmethod
+    def _kind(v: str) -> str:
+        if not v:
+            return "empty"
+        c = v[0]
+        if v.replace(".", "", 3).isdigit():
+            return "ip" if v.count(".") == 3 else "num"
+        if ":" in v and all(ch in "0123456789abcdefABCDEF:." for ch in v):
+            return "ip"
+        return "word" if c.isalpha() and v.replace("_", "").replace("-", "").isalnum() else "text"
+
+    def _stat(self, g: dict, fields: dict) -> None:
+        """Cheap per-field counters: lines seen, distinct values (capped), type mix."""
+        st = g["_stats"]
+        if st is None:
+            st = g["_stats"] = self.store.stats(g["signature"])
+        cap = self.settings.stats_max_values
+        for k, v in fields.items():
+            if k[0] == "@" and k != "@msgid":
+                continue
+            f = st.get(k)
+            if f is None:
+                if len(st) >= 80:
+                    continue
+                f = st[k] = {"n": 0, "vals": {}, "over": False, "kinds": {}}
+            f["n"] += 1
+            sv = v if isinstance(v, str) else json.dumps(v)
+            sv = sv[:60]
+            kd = self._kind(sv)
+            f["kinds"][kd] = f["kinds"].get(kd, 0) + 1
+            if not f["over"]:
+                vals = f["vals"]
+                vals[sv] = vals.get(sv, 0) + 1
+                if len(vals) > cap:
+                    f["over"] = True
+                    f["vals"] = {}
+        self._dirty_stats.add(g["signature"])
+
+    def classify(self, g: dict) -> dict:
+        """Per field: fixed (one value), variable (many), or ambiguous (a few
+        recurring values: an enum field, or the thing that defines the event type)."""
+        st = g["_stats"] if g["_stats"] is not None else self.store.stats(g["signature"])
+        out = {}
+        s = self.settings
+        for k, f in st.items():
+            if f["over"]:
+                out[k] = "variable"
+            elif len(f["vals"]) <= 1:
+                out[k] = "fixed"
+            elif (f["n"] >= s.ambiguous_min_lines and len(f["vals"]) <= s.ambiguous_max_values
+                  and min(f["vals"].values()) >= 2 and f["kinds"].get("word", 0) >= 0.9 * f["n"]):
+                out[k] = "ambiguous"
+            else:
+                out[k] = "variable"
+        return out
 
     # ------------------------------------------------------------ parse + map
     def _mapping(self, rule_id: str | None) -> dict | None:
@@ -454,6 +552,16 @@ class Engine:
         return {"status": "parsed", "fields": fields, "event": event, "valid": not errors,
                 "errors": errors + problems, "warnings": warnings, "tags": tags,
                 "parser_rule": rule_used, "mapping_rule": g["mapping_rule"] or DEFAULT_MAPPING}
+
+    def _event_row(self, rid: int, g: dict, res: dict) -> tuple:
+        """Every parsed event carries its group id and the rule versions that made it."""
+        ev = res["event"]
+        pr = self.snap.rule(res["parser_rule"])
+        mr = self.snap.rule(res["mapping_rule"])
+        return (rid, g["signature"], _j(res["fields"]), _j(ev) if ev is not None else None,
+                ev.get("class_uid") if ev else None, None if res["valid"] is None else int(res["valid"]),
+                _j(res["errors"][:8]), res["parser_rule"], res["mapping_rule"], _j(res["tags"]),
+                pr["version"] if pr else None, mr["version"] if mr else None)
 
     def _shadow(self, g: dict, det: Detection, sg: signature.Signed, rec: Record, counts: dict) -> None:
         for rid in (g["parser_rule"], g["mapping_rule"]):
@@ -550,31 +658,33 @@ class Engine:
             g["count"] += 1
             g["last_batch"] = self.batch_no
             self._dirty_groups.add(g["signature"])
-            self._sample(g, rid, rec.text)
             res = self.parse_record(g, det, sg, rec)
             if self.snap.shadow:
                 self._shadow(g, det, sg, rec, shadow_counts)
+            masked = sg.template if det.format == "unstructured" else None
             if res["status"] == "pending":
                 put(g["signature"], "pending", source)
+                self._sample(g, rid, rec.text, masked)
+                self._stat(g, {f"#{i} {ph}": v for i, (ph, v) in enumerate(sg.variables[:30])})
                 stats["pending"] += 1
             elif res["status"] == "dlq":
                 put(g["signature"], "dlq", source)
                 dlq_rows.append((rid, res["stage"], res["reason"], g["signature"], self.batch_no))
                 g["parse_failures"] += 1
+                self._sample(g, rid, rec.text, masked, failure=True)
                 stats["dlq"] += 1
             else:
                 put(g["signature"], "parsed", source)
-                ev = res["event"]
-                event_rows.append((rid, g["signature"], _j(res["fields"]), _j(ev) if ev is not None else None,
-                                   ev.get("class_uid") if ev else None,
-                                   None if res["valid"] is None else int(res["valid"]),
-                                   _j(res["errors"][:8]), res["parser_rule"], res["mapping_rule"], _j(res["tags"])))
+                self._sample(g, rid, rec.text, masked, res["fields"], failure=res["valid"] is False)
+                self._stat(g, res["fields"])
+                event_rows.append(self._event_row(rid, g, res))
                 if res["valid"] is False:
                     dlq_rows.append((rid, "ocsf", "; ".join(res["errors"][:3])[:300], g["signature"], self.batch_no))
                 stats["parsed"] += 1
         stats["new_groups"] = len(self.groups) - before
         self._merge()
         self._after_batch()
+        touched = set(self._dirty_groups)
         self.store.begin()
         try:
             if raw_rows:
@@ -598,6 +708,9 @@ class Engine:
         except Exception:
             self.store.rollback()
             raise
+        if self.settings.auto_repair and raw_ids is None:
+            from . import repair
+            stats["repair"] = repair.after_batch(self, touched)
         return stats
 
     def _flush(self) -> None:
@@ -609,6 +722,14 @@ class Engine:
             g = self.groups.get(sig)
             if g and g["_samples"] is not None:
                 self.store.replace_samples(sig, g["_samples"])
+        if self._new_sigs:
+            self.store.put_signatures(self._new_sigs)
+            self._new_sigs = []
+        for sig in self._dirty_stats:
+            g = self.groups.get(sig)
+            if g and g["_stats"] is not None:
+                self.store.put_stats(sig, g["_stats"])
+        self._dirty_stats = set()
         for key in self._dirty_sources:
             self.store.put_source(self.sources[key])
         for op in self._queue_ops:
@@ -769,10 +890,15 @@ class Engine:
                         ok = True
                         for p in combo:
                             vals = {live[m][p] for m in members}
+                            if any(v.strip(signature._EDGE).lower() in self.snap.protected for v in vals):
+                                ok = False       # outcome and action words never merge away
+                                break
                             if width == 1:
                                 ok = "<*>" in vals or len(vals) >= k
                             else:
                                 ok = ok and len(vals) >= max(k + 1, int(0.6 * len(members)))
+                                if not ok:
+                                    break
                         if not ok:
                             continue
                         toks = list(live[members[0]])
@@ -800,13 +926,14 @@ class Engine:
         if canon is None:
             keep = max(with_rule or gs, key=lambda g: g["count"])
             canon = {**keep, "signature": sig, "template": template, "count": 0, "merged_into": None,
-                     "_samples": [], "_tokens": set(), "detail": {"merged": True},
+                     "_samples": [], "_tokens": set(), "_stats": {}, "detail": {"merged": True},
                      "status": keep["status"] if keep["parser_rule"] else "new",
                      "first_batch": min(g["first_batch"] or 0 for g in gs)}
             if not keep["parser_rule"]:
                 canon["parser_rule"] = canon["mapping_rule"] = None
             self.groups[sig] = canon
             self._register(canon)
+            self._link(sig, sig)
             self.merged_index.setdefault((bucket, len(toks)), []).append((toks, sig))
         elif not any(m[1] == sig for m in self.merged_index.get((bucket, len(toks)), ())):
             self.merged_index.setdefault((bucket, len(toks)), []).append((toks, sig))
@@ -820,18 +947,22 @@ class Engine:
             g["status"] = "merged"
             g["merged_into"] = sig
             self.alias[g["signature"]] = sig
+            for a, c in list(self.alias.items()):       # every signature of the member now leads to the merged group
+                if c == g["signature"]:
+                    self.alias[a] = sig
+            self._queue_ops.append(("sql", "UPDATE group_signatures SET group_id=? WHERE group_id=?", (sig, g["signature"])))
             self._dirty_groups.add(g["signature"])
             self._queue_ops.append(("sql", "UPDATE raw SET signature=? WHERE signature=?", (sig, g["signature"])))
             self._queue_ops.append(("sql", "UPDATE events SET signature=? WHERE signature=?", (sig, g["signature"])))
             self._queue_ops.append(("sql", "UPDATE queue SET status='done' WHERE key=? AND status='open'", (g["signature"],)))
         # keep a diverse sample set: spread picks across the merged members
-        pool.sort(key=lambda s: s[0])
+        pool = sorted({x[0]: x for x in pool if x[2] != "recent"}.values(), key=lambda x: x[0])
         cap = self.settings.samples_max
         if len(pool) > cap:
             step = len(pool) / cap
             pool = [pool[int(i * step)] for i in range(cap)]
-        canon["_samples"] = pool
-        canon["_tokens"] = set().union(*[_tokens(t) for _, t in pool]) if pool else set()
+        canon["_samples"] = [(x[0], x[1], x[2] if x[2] == "failure" else "diverse", x[3]) for x in pool]
+        canon["_tokens"] = set().union(*[_tokens(x[1]) for x in pool]) if pool else set()
         self._dirty_groups.add(sig)
         self._dirty_samples.add(sig)
         return canon
@@ -856,7 +987,8 @@ class Engine:
             new_offset = src.end_offset(lines, consumed, eof)
             st = self.process(recs, {key: new_offset})
             for k in st:
-                total[k] += st[k]
+                if k in total:
+                    total[k] += st[k]
             total["batches"] += 1
             if progress:
                 progress(st)
@@ -865,7 +997,7 @@ class Engine:
         return total
 
     # ------------------------------------------------------------ replay
-    def replay_signatures(self, sigs: list) -> dict:
+    def replay_signatures(self, sigs: list, restat: bool = False) -> dict:
         """Re-parse and re-map the stored raw lines of these groups after a rule
         was created or changed. Counts and samples are not touched."""
         self.reload()
@@ -877,6 +1009,8 @@ class Engine:
             rows = self.store.raw_by_signature(g["signature"])
             event_rows, dlq_rows, upd = [], [], []
             g["parse_failures"] = 0
+            if restat:
+                g["_stats"] = {}
             for r in rows:
                 if r["raw"] is None:
                     continue
@@ -887,13 +1021,12 @@ class Engine:
                 det, source, cols = self.analyse(rec)
                 sg = signature.sign(self.snap, det, rec.label, cols)
                 res = self.parse_record(g, det, sg, rec)
+                if restat:
+                    self._stat(g, res["fields"] if res["status"] == "parsed" else
+                               {f"#{i} {ph}": v for i, (ph, v) in enumerate(sg.variables[:30])})
                 stats["records"] += 1
                 if res["status"] == "parsed":
-                    ev = res["event"]
-                    event_rows.append((r["id"], g["signature"], _j(res["fields"]), _j(ev) if ev is not None else None,
-                                       ev.get("class_uid") if ev else None,
-                                       None if res["valid"] is None else int(res["valid"]),
-                                       _j(res["errors"][:8]), res["parser_rule"], res["mapping_rule"], _j(res["tags"])))
+                    event_rows.append(self._event_row(r["id"], g, res))
                     if res["valid"] is False:
                         dlq_rows.append((r["id"], "ocsf", "; ".join(res["errors"][:3])[:300], g["signature"], self.batch_no))
                     stats["parsed"] += 1
@@ -911,6 +1044,8 @@ class Engine:
                 self.store.put_events(event_rows)
                 self.store.put_dlq(dlq_rows)
                 self.store.upsert_group(g)
+                if restat and g["_stats"] is not None:
+                    self.store.put_stats(g["signature"], g["_stats"])
                 self.store.commit()
             except Exception:
                 self.store.rollback()
@@ -918,45 +1053,154 @@ class Engine:
         return stats
 
     def replay_source(self, source: str) -> dict:
-        """Re-run every stored raw line of a source from the start of the
-        pipeline. Used after a mask or sign rule changed, because signatures
-        change with it. The source's old groups are dropped first."""
+        """Re-hash every stored line of a source after its mask or sign rule
+        changed. Groups keep their ids, so parsers and mappings survive:
+        each new signature goes to the old group that most of its lines came
+        from. Old groups that lose all their lines are marked merged into the
+        group that took them. Only signatures with no old group get a new one."""
+        from collections import Counter
         self.reload()
         rows = self.store.raw_by_source(source)
-        sigs = [s for s, g in self.groups.items() if g["source"] == source]
-        headers = {s: self._header_of(self.groups[s]) for s in sigs}
+        label = source.split("|", 1)[0]
+
+        def top(gid):
+            g = self.groups.get(gid)
+            while g is not None and g["detail"].get("parent"):
+                g = self.groups.get(g["detail"]["parent"])
+            return g["signature"] if g is not None else None
+        old = {s for s, g in self.groups.items() if g["source"] == source and not g["merged_into"]
+               and not g["detail"].get("parent")}
+        plan: dict = {}
+        for r in rows:
+            g0 = self.groups.get(r["signature"]) if r["signature"] else None
+            rec = Record(r["stream"], r["offset"], text=r["raw"], label=None if label == "-" else label,
+                         columns=self._header_of(self.groups[top(r["signature"])]) if g0 and top(r["signature"]) else None)
+            det, _, cols = self.analyse(rec)
+            sg = signature.sign(self.snap, det, rec.label, cols)
+            if sg.error:
+                continue
+            e = plan.setdefault(sg.signature, {"rows": [], "from": Counter(), "det": det, "sg": sg, "cols": cols})
+            e["rows"].append(r)
+            if g0:
+                e["from"][top(r["signature"])] += 1
+        # assign group ids: an unchanged signature keeps its group; then the biggest new
+        # signatures claim the old group that gave them the most lines (one with rules first)
+        claimed: dict = {n: n for n in plan if n in old}
+        taken = set(claimed.values())
+        for nsig, e in sorted(plan.items(), key=lambda kv: -len(kv[1]["rows"])):
+            if nsig in claimed:
+                continue
+            cands = sorted(((bool(self.groups[g]["parser_rule"]), n, g) for g, n in e["from"].items()
+                            if g in old and g not in taken), reverse=True)
+            if cands:
+                claimed[nsig] = cands[0][2]
+                taken.add(cands[0][2])
+        # forget the source's old signatures and children, then rebuild
+        kids = [s for s, g in self.groups.items() if g["source"] == source and g["detail"].get("parent")]
         self.store.begin()
         try:
-            for sig in sigs:
-                self.store.x("DELETE FROM groups WHERE signature=?", (sig,))
-                self.store.x("DELETE FROM samples WHERE signature=?", (sig,))
-                self.store.x("DELETE FROM queue WHERE key=? AND name IN ('needs-parser','needs-mapping','longtail')", (sig,))
-            self.store.delete_events([r["id"] for r in rows])
-            src = self._source(source)
-            src.update({"lines": 0, "signatures": 0, "quarantined": 0, "reason": None})
-            self.store.put_source(src)
+            for gid in list(old) + kids:
+                self.store.x("DELETE FROM group_signatures WHERE group_id=?", (gid,))
+            for k in kids:
+                self.store.x("DELETE FROM groups WHERE signature=?", (k,))
+                self.store.x("DELETE FROM samples WHERE signature=?", (k,))
+                self.store.x("DELETE FROM queue WHERE key=?", (k,))
             self.store.commit()
         except Exception:
             self.store.rollback()
             raise
-        for sig in sigs:
-            g = self.groups.pop(sig, None)
-            self.alias.pop(sig, None)
-            if g and sig in self.by_bucket.get(g["bucket"], ()):
-                self.by_bucket[g["bucket"]].remove(sig)
-        self.source_sigs[source] = set()
-        self.alias = {a: c for a, c in self.alias.items() if c in self.groups}
-        self.merged_index = {k: [m for m in v if m[1] in self.groups] for k, v in self.merged_index.items()}
-        label = source.split("|", 1)[0]
-        recs = [Record(r["stream"], r["offset"], text=r["raw"], label=None if label == "-" else label,
-                       columns=headers.get(r["signature"])) for r in rows]
-        total = {"records": 0, "parsed": 0, "pending": 0, "dlq": 0, "quarantined": 0}
-        for i in range(0, len(recs), 2000):
-            st = self.process(recs[i:i + 2000], raw_ids=[r["id"] for r in rows[i:i + 2000]])
-            for k in total:
-                total[k] += st.get(k, 0)
-        self.finalize()
-        return total
+        gone = set(old) | set(kids)
+        self.alias = {a: c for a, c in self.alias.items() if c not in gone and a not in gone}
+        for k in kids:
+            g = self.groups.pop(k)
+            self.by_bucket.get(g["bucket"], []).remove(k) if k in self.by_bucket.get(g["bucket"], []) else None
+            self.source_sigs.get(source, set()).discard(k)
+        self.merged_index = {k: [m for m in v if m[1] not in gone] for k, v in self.merged_index.items()}
+        for gid in old:
+            g = self.groups[gid]
+            g.update({"count": 0, "_samples": [], "_tokens": set(), "_stats": {}})
+            self._dirty_samples.add(gid)
+        upd, final, received = [], {}, Counter()
+        for nsig, e in plan.items():
+            det, sg = e["det"], e["sg"]
+            gid = claimed.get(nsig)
+            if gid:
+                g = self.groups[gid]
+                keep = {k: g["detail"][k] for k in ("ambiguous", "cooldown_until", "merged") if k in g["detail"]}
+                g["template"], g["bucket"], g["format"] = sg.template, det.bucket, det.format
+                g["detail"] = {**sg.detail, **keep}
+                if det.dialect:
+                    g["detail"]["dialect"] = det.dialect
+                if det.delimiter:
+                    g["detail"]["delimiter"] = det.delimiter
+                if e["cols"]:
+                    g["detail"]["columns"] = list(e["cols"])
+            else:
+                new_id = nsig if nsig not in self.groups else signature._h(nsig, "regroup", str(self.batch_no))
+                g = self._new_group(new_id, det, sg, source, e["cols"])
+                self._register(g)
+                self._bind(g, det, sg, None, e["cols"])
+                donor = e["from"].most_common(1)
+                if donor:                                   # lineage: start from the parent's rules when they fit
+                    par = self.groups[donor[0][0]]
+                    g["detail"]["parent_lineage"] = par["signature"]
+                    pr = self.snap.rule(par["parser_rule"])
+                    if pr and not g["parser_rule"]:
+                        try:
+                            for r in e["rows"][:20]:
+                                d2 = self.analyse(Record(r["stream"], r["offset"], text=r["raw"],
+                                                         label=None if label == "-" else label))[0]
+                                parsers.run(self.snap, pr["body"], d2)
+                            g["parser_rule"], g["mapping_rule"] = par["parser_rule"], par["mapping_rule"]
+                            g["labels"] = dict(par["labels"])
+                            g["status"] = "mapped" if g["mapping_rule"] else "parsed"
+                        except ParseError:
+                            pass
+            self._link(nsig, g["signature"])
+            if det.format == "unstructured":
+                self._new_unstructured.add(det.bucket)
+            for o, n in e["from"].items():
+                received[(o, g["signature"])] += n
+            for r in e["rows"]:
+                rec = Record(r["stream"], r["offset"], text=r["raw"], label=None if label == "-" else label,
+                             columns=self._header_of(g))
+                tgt = self._subgroup(g, self.analyse(rec)[0])
+                tgt["count"] += 1
+                tgt["last_batch"] = self.batch_no
+                self._sample(tgt, r["id"], r["raw"], sg.template if det.format == "unstructured" else None)
+                final[tgt["signature"]] = tgt
+                upd.append((tgt["signature"], "pending", r["source"], r["id"]))
+            self._dirty_groups.add(g["signature"])
+        for gid in old:                       # an old group with no lines left: merged into whoever took them
+            g = self.groups[gid]
+            if g["count"] == 0 and gid not in claimed.values() and g["status"] != "split":
+                to = max(((n, t) for (o, t), n in received.items() if o == gid), default=(0, None))[1]
+                g["status"], g["merged_into"] = "merged", to
+                if to:
+                    self.alias[gid] = to
+                self._queue_ops.append(("sql", "UPDATE queue SET status='done' WHERE key=? AND status='open'", (gid,)))
+            self._dirty_groups.add(gid)
+        src = self._source(source)
+        src.update({"lines": len(rows), "quarantined": 0, "reason": None})
+        self._dirty_sources.add(source)
+        self.batch_no += 1
+        self._merge()
+        self._after_batch()
+        self.store.begin()
+        try:
+            self.store.update_raw(upd)
+            self._flush()
+            self.store.set_state("batch", self.batch_no)
+            self.store.commit()
+        except Exception:
+            self.store.rollback()
+            raise
+        live = [s for s in final if not self.groups[s]["merged_into"]] + \
+               list({self.alias[s] for s in final if s in self.alias})
+        out = self.replay_signatures(sorted(set(live)), restat=True)
+        out["groups_kept"] = len(set(claimed.values()))
+        out["groups_new"] = len(plan) - len(claimed)
+        return out
 
 
 def metrics(store: SqliteStore) -> dict:

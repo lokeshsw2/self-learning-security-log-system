@@ -29,9 +29,28 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE INDEX IF NOT EXISTS groups_bucket ON groups(bucket);
 CREATE INDEX IF NOT EXISTS groups_source ON groups(source);
 
+-- In `groups`, `raw`, `events` and `samples` the column named `signature` holds the
+-- GROUP ID. A group id is stable; the signatures that lead to it are in group_signatures.
+CREATE TABLE IF NOT EXISTS group_signatures (signature TEXT PRIMARY KEY, group_id TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS gs_group ON group_signatures(group_id);
+
 CREATE TABLE IF NOT EXISTS samples (
   signature TEXT NOT NULL, raw_id INTEGER NOT NULL, raw TEXT NOT NULL,
-  PRIMARY KEY (signature, raw_id));
+  tag TEXT NOT NULL DEFAULT 'diverse',      -- diverse | recent | failure | value:<field>=<value>
+  masked TEXT, PRIMARY KEY (signature, raw_id));
+
+CREATE TABLE IF NOT EXISTS group_stats (group_id TEXT PRIMARY KEY, stats TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS decisions (
+  id INTEGER PRIMARY KEY, at REAL NOT NULL, scope TEXT NOT NULL, question TEXT NOT NULL,
+  answer TEXT NOT NULL, answered_by TEXT NOT NULL, tier TEXT NOT NULL,   -- verified | plausible | hold
+  UNIQUE (scope, question));
+
+CREATE TABLE IF NOT EXISTS operations (
+  id INTEGER PRIMARY KEY, at REAL NOT NULL, batch INTEGER NOT NULL, op TEXT NOT NULL, target TEXT NOT NULL,
+  params TEXT NOT NULL, verification TEXT NOT NULL, tier TEXT NOT NULL, by TEXT NOT NULL,
+  status TEXT NOT NULL,              -- applied | kept | rolled_back
+  baseline TEXT NOT NULL DEFAULT '{}');
 
 CREATE TABLE IF NOT EXISTS raw (
   id INTEGER PRIMARY KEY, stream TEXT NOT NULL, offset INTEGER NOT NULL,
@@ -44,7 +63,8 @@ CREATE INDEX IF NOT EXISTS raw_source ON raw(source, status);
 CREATE TABLE IF NOT EXISTS events (
   raw_id INTEGER PRIMARY KEY, signature TEXT NOT NULL, fields TEXT NOT NULL,
   ocsf TEXT, class_uid INTEGER, valid INTEGER, errors TEXT,
-  parser_rule TEXT, mapping_rule TEXT, tags TEXT NOT NULL DEFAULT '[]');
+  parser_rule TEXT, mapping_rule TEXT, tags TEXT NOT NULL DEFAULT '[]',
+  parser_version INTEGER, mapping_version INTEGER);
 CREATE INDEX IF NOT EXISTS events_sig ON events(signature);
 
 CREATE TABLE IF NOT EXISTS dlq (
@@ -193,12 +213,52 @@ class SqliteStore(Store):
         d["labels"] = json.loads(d["labels"])
         return d
 
-    def samples(self, signature: str) -> list[dict]:
-        return [dict(r) for r in self.q("SELECT raw_id, raw FROM samples WHERE signature=? ORDER BY raw_id", (signature,))]
+    def samples(self, signature: str, tags: bool = False) -> list[dict]:
+        """Sample lines of a group. Without `tags`, failures are left out."""
+        rows = self.q("SELECT raw_id, raw, tag, masked FROM samples WHERE signature=? ORDER BY raw_id", (signature,))
+        return [dict(r) for r in rows if tags or r["tag"] != "failure"]
 
-    def replace_samples(self, signature: str, samples: list[tuple[int, str]]) -> None:
+    def replace_samples(self, signature: str, samples: list) -> None:
+        """samples: (raw_id, raw) or (raw_id, raw, tag, masked)."""
         self.x("DELETE FROM samples WHERE signature=?", (signature,))
-        self.db.executemany("INSERT OR IGNORE INTO samples VALUES(?,?,?)", [(signature, i, t) for i, t in samples])
+        self.db.executemany("INSERT OR IGNORE INTO samples(signature,raw_id,raw,tag,masked) VALUES(?,?,?,?,?)",
+                            [(signature, s[0], s[1], s[2] if len(s) > 2 else "diverse", s[3] if len(s) > 3 else None)
+                             for s in samples])
+
+    # ------------------------------------------------------------ signatures, stats, decisions, operations
+    def signature_map(self) -> dict:
+        return {r["signature"]: r["group_id"] for r in self.q("SELECT signature, group_id FROM group_signatures")}
+
+    def put_signatures(self, rows: list) -> None:
+        self.db.executemany("INSERT INTO group_signatures(signature, group_id) VALUES(?,?) "
+                            "ON CONFLICT(signature) DO UPDATE SET group_id=excluded.group_id", rows)
+
+    def stats(self, group_id: str) -> dict:
+        r = self.q("SELECT stats FROM group_stats WHERE group_id=?", (group_id,))
+        return json.loads(r[0]["stats"]) if r else {}
+
+    def put_stats(self, group_id: str, stats: dict) -> None:
+        self.x("INSERT INTO group_stats(group_id, stats) VALUES(?,?) ON CONFLICT(group_id) DO UPDATE SET stats=excluded.stats",
+               (group_id, _j(stats)))
+
+    def decision(self, scope: str, question: str) -> dict | None:
+        r = self.q("SELECT * FROM decisions WHERE scope=? AND question=?", (scope, question))
+        return dict(r[0]) if r else None
+
+    def decisions(self, scope_prefix: str = "") -> list:
+        return [dict(r) for r in self.q("SELECT * FROM decisions WHERE scope LIKE ? ORDER BY id", (scope_prefix + "%",))]
+
+    def decide(self, scope: str, question: str, answer: str, by: str, tier: str) -> None:
+        self.x("INSERT INTO decisions(at,scope,question,answer,answered_by,tier) VALUES(?,?,?,?,?,?) "
+               "ON CONFLICT(scope,question) DO UPDATE SET answer=excluded.answer, answered_by=excluded.answered_by, "
+               "tier=excluded.tier, at=excluded.at", (time.time(), scope, question, answer, by, tier))
+
+    def log_operation(self, batch: int, op: str, target: str, params: dict, verification: dict, tier: str, by: str,
+                      baseline: dict | None = None, status: str = "applied") -> int:
+        cur = self.x("INSERT INTO operations(at,batch,op,target,params,verification,tier,by,status,baseline) "
+                     "VALUES(?,?,?,?,?,?,?,?,?,?)", (time.time(), batch, op, target, _j(params), _j(verification), tier,
+                                                    by, status, _j(baseline or {})))
+        return cur.lastrowid
 
     # ------------------------------------------------------------ raw lines and events
     def next_raw_id(self) -> int:
@@ -225,7 +285,8 @@ class SqliteStore(Store):
 
     def put_events(self, rows: list[tuple]) -> None:
         self.db.executemany("INSERT OR REPLACE INTO events(raw_id,signature,fields,ocsf,class_uid,valid,errors,"
-                            "parser_rule,mapping_rule,tags) VALUES(?,?,?,?,?,?,?,?,?,?)", rows)
+                            "parser_rule,mapping_rule,tags,parser_version,mapping_version) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", rows)
 
     def delete_events(self, raw_ids: list[int]) -> None:
         self.db.executemany("DELETE FROM events WHERE raw_id=?", [(i,) for i in raw_ids])

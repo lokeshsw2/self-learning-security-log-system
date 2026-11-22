@@ -24,8 +24,13 @@ class Signed:
     error: str | None = None
 
 
-def mask(text: str, patterns: list) -> tuple[str, list]:
-    """Apply ordered mask patterns. Later patterns never see masked spans."""
+_EDGE = "\"'[](){}<>.,;:!"
+
+
+def mask(text: str, patterns: list, protected=frozenset()) -> tuple[str, list]:
+    """Apply ordered mask patterns. Later patterns never see masked spans.
+    A match that is a protected word (failed, denied, accepted, ...) is left as
+    fixed text, so different outcomes never share a signature."""
     segs: list = [(text, None)]            # (text, placeholder or None)
     for _name, pat, placeholder, group in patterns:
         nxt: list = []
@@ -39,6 +44,8 @@ def mask(text: str, patterns: list) -> tuple[str, list]:
                 if s < 0 or e <= s:
                     continue
                 if s < pos:
+                    continue
+                if protected and seg[s:e].strip(_EDGE).lower() in protected:
                     continue
                 if s > pos:
                     nxt.append((seg[pos:s], None))
@@ -78,7 +85,7 @@ def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | Non
     bucket = det.bucket
     fmt = det.format
     if fmt == "unstructured":
-        template, variables = mask(det.payload, snap.mask_patterns(bucket, stream))
+        template, variables = mask(det.payload, snap.mask_patterns(bucket, stream), snap.protected)
         template = " ".join(template.split())
         return Signed(_h(bucket, "u", template), template, variables)
 
@@ -97,7 +104,7 @@ def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | Non
             text = ""
             if prefix and rule.get("text", True):
                 # only the words before the first pair: trailing flags must not split the group
-                text, _ = mask(prefix, snap.mask_patterns(bucket, stream))
+                text, _ = mask(prefix, snap.mask_patterns(bucket, stream), snap.protected)
                 text = " ".join(text.split())
             if leftover:
                 flat = dict(flat)
@@ -124,11 +131,11 @@ def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | Non
             keys = sorted({k.split("#", 1)[0] for k in flat})
             text = ""
         else:
-            template, variables = mask(det.payload, snap.mask_patterns(bucket, stream))
+            template, variables = mask(det.payload, snap.mask_patterns(bucket, stream), snap.protected)
             return Signed(_h(bucket, "u", template), template, variables)
     except formats.ParseError as exc:
         # Looked structured but does not decode (truncated JSON, broken CEF header).
-        template, variables = mask(det.payload[:400], snap.mask_patterns(bucket, stream))
+        template, variables = mask(det.payload[:400], snap.mask_patterns(bucket, stream), snap.protected)
         return Signed(_h(bucket, "broken", fmt), f"<undecodable {fmt}>", variables, error=str(exc))
 
     mode = rule.get("keys", "auto")
@@ -145,6 +152,14 @@ def sign(snap: Snapshot, det: Detection, stream: str | None, columns: list | Non
         sig_keys = []
     else:
         sig_keys = keys
+    # A field whose value is an outcome or action word marks the event type.
+    prot = []
+    if snap.protected and fmt in ("json", "kv", "cef", "leef", "xml"):
+        for k, v in flat.items():
+            if isinstance(v, str) and 2 < len(v) <= 24 and k.count(".") <= 1 and v.lower() in snap.protected:
+                prot.append(f"{k}={v.lower()}")
+        prot = sorted(prot)[:4]
+    disc = disc + prot
     template = " ".join(sig_keys)
     if disc:
         template += " :: " + " ".join(disc)

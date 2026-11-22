@@ -39,6 +39,13 @@ class Settings:
     parser_min_match: float = 1.0       # on the samples the agent saw
     parser_min_holdout: float = 0.98    # on stored lines the agent did not see
     # Shadow mode: lines a shadow rule must hold on before promotion.
+    # Self-correcting grouping loop.
+    auto_repair: bool = True            # run the repair scan after every batch
+    cooldown_batches: int = 3           # a changed group cannot be changed again for this many batches
+    ambiguous_max_values: int = 12      # a field with 2..N recurring values is "ambiguous"
+    ambiguous_min_lines: int = 20
+    stats_max_values: int = 40          # distinct values tracked per field before it counts as a variable
+    rollback_drop: float = 0.05         # health drop after an operation that triggers auto-rollback
     shadow_mode: bool = False           # new versions of live rules start in shadow
     shadow_min_lines: int = 2000
     shadow_min_ok: float = 0.995

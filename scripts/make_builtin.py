@@ -15,7 +15,7 @@ META = {"created_by": "builtin", "source": "this project", "license": "project l
 
 MON = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
 DAY = r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)"
-TS3164 = MON + r" [ \d]\d(?: \d{4})? \d\d:\d\d:\d\d(?:\.\d+)?"
+TS3164 = MON + r" {1,2}\d{1,2}(?: \d{4})? \d\d:\d\d:\d\d(?:\.\d+)?"
 ISO = r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d)?"
 HOST = r"[A-Za-z0-9][A-Za-z0-9._\-:]*"
 PRI = r"(?:<(?P<pri>\d{1,3})>)?"
@@ -56,6 +56,11 @@ def check(order, name, typ, test, **kw):
 
 
 check(0, "binary", "format", {"kind": "binary", "max_nonprintable": 0.1}, format="binary")
+check(3, "json_wrap", "envelope", {"kind": "json_wrap", "fields": ["message", "msg", "log", "raw", "_raw", "line"],
+                                   "max_keys": 6})
+check(4, "embedded_json", "format", {"kind": "regex", "pattern":
+      r'^(?P<prefix>[^{]{1,300}?)(?P<payload>\{\s*".*\})\s*$'},
+      format="json", header_patterns={"prefix": HEADER_PREFIX})
 check(5, "json", "format", {"kind": "json"}, format="json")
 check(6, "xml", "format", {"kind": "xml"}, format="xml")
 check(10, "cef", "format", {"kind": "regex", "pattern":
@@ -93,6 +98,7 @@ check(31, "bracket_ts", "envelope", {"kind": "regex", "pattern":
       app=["app"])
 check(47, "kv_checkpoint", "format", {"kind": "kv", "dialect": "kv_colon", "min_pairs": 4, "min_coverage": 0.6},
       format="kv")
+check(46, "kv_js", "format", {"kind": "kv", "dialect": "kv_js", "min_pairs": 4, "min_coverage": 0.6}, format="kv")
 check(48, "kv_pipe", "format", {"kind": "kv", "dialect": "kv_pipe", "min_pairs": 4, "min_coverage": 0.6},
       format="kv")
 check(50, "kv", "format", {"kind": "kv", "dialect": "kv_eq", "min_pairs": 4, "min_coverage": 0.55}, format="kv")
@@ -111,6 +117,8 @@ add("dialect:kv_pipe", {"mode": "span", "key_pattern": r"(?:^|\|)(?P<k>[A-Za-z_]
     "key=value|key=value")
 add("dialect:kv_label", {"mode": "span", "key_pattern": r"(?:^|, )(?P<k>[A-Z][A-Za-z0-9_]*(?: [A-Za-z0-9_]+){0,4}): ",
                            "strip": " ,"}, "Label: value, Label: value (labels may contain spaces)")
+add("dialect:kv_js", {"mode": "pair", "pair_pattern": r"(?:^|[{,])\s*(?P<k>[A-Za-z_]\w*):'(?P<s>.*?)'(?:\s*[,}])"},
+    "key:'value' pairs with unquoted keys (JavaScript-style object text)")
 add("dialect:kv_span", {"mode": "span", "key_pattern": r"(?:^|\s)(?P<k>[A-Za-z_][\w.\-]*)=", "strip": " \t"},
     "key=value where values may contain spaces and run to the next key")
 
@@ -139,6 +147,17 @@ add("mask:default", {"scope": {"bucket": "*"}, "priority": 0, "mode": "extend", 
     {"name": "hex", "pattern": rf"\b{HEXD}{{8,}}\b", "placeholder": "<HEX>"},
 ]}, "Variables the spec names: timestamps, IPs, numbers, hex, UUIDs, quoted strings; plus MAC, URL, email, paths")
 
+add("words:protected", {"words": [
+    "accepted", "accept", "allowed", "allow", "permitted", "permit", "granted", "grant", "passed", "pass",
+    "succeeded", "success", "successful", "authenticated", "authorized", "opened", "open", "started", "start",
+    "connected", "connect", "established", "built", "created", "create", "added", "add", "enabled", "enable",
+    "login", "logon", "logged in",
+    "failed", "fail", "failure", "denied", "deny", "blocked", "block", "rejected", "reject", "dropped", "drop",
+    "refused", "refuse", "forbidden", "invalid", "unauthorized", "error", "timeout", "expired", "locked",
+    "closed", "close", "stopped", "stop", "disconnected", "disconnect", "terminated", "teardown", "deleted",
+    "delete", "removed", "remove", "disabled", "disable", "logout", "logoff", "logged out",
+    "detected", "quarantined", "cleaned", "alert", "warning", "critical", "modified", "changed", "updated"]},
+    "Outcome and action words: never masked, never merged away, and a field holding one marks the event type")
 add("sign:default", {"scope": {"bucket": "*"}, "priority": 0, "keys": "auto", "depth": 1, "text": True,
                      "discriminators": ["type", "subtype", "event_type", "eventType", "eventName", "EventID",
                                         "event_simpleName", "log_type", "log_subtype", "Operation", "@msgid"]},

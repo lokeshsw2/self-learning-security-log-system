@@ -72,6 +72,56 @@
   },
   {
    "body": {
+    "name": "json_wrap",
+    "order": 3,
+    "test": {
+     "fields": [
+      "message",
+      "msg",
+      "log",
+      "raw",
+      "_raw",
+      "line"
+     ],
+     "kind": "json_wrap",
+     "max_keys": 6
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:json_wrap"
+  },
+  {
+   "body": {
+    "format": "json",
+    "header_patterns": {
+     "prefix": [
+      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
+      "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+)",
+      "^<(?P<pri>\\d{1,3})>"
+     ]
+    },
+    "name": "embedded_json",
+    "order": 4,
+    "test": {
+     "kind": "regex",
+     "pattern": "^(?P<prefix>[^{]{1,300}?)(?P<payload>\\{\\s*\".*\\})\\s*$"
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:embedded_json"
+  },
+  {
+   "body": {
     "format": "json",
     "name": "json",
     "order": 5,
@@ -113,7 +163,7 @@
     "format": "cef",
     "header_patterns": {
      "prefix": [
-      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
+      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
       "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+)",
       "^<(?P<pri>\\d{1,3})>"
      ]
@@ -142,7 +192,7 @@
     "format": "leef",
     "header_patterns": {
      "prefix": [
-      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
+      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
       "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+)",
       "^<(?P<pri>\\d{1,3})>"
      ]
@@ -170,7 +220,7 @@
     ],
     "header_patterns": {
      "prefix": [
-      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
+      "^(?:<(?P<pri>\\d{1,3})>)?(?:\\d+: )?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?|\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d:\\d\\d(?:[.,]\\d+)?(?:Z|[+-]\\d\\d:?\\d\\d)?)(?: (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*))?(?: (?P<proc>[^\\s\\[:]+)(?:\\[(?P<pid>\\d+)\\])?)?",
       "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+)",
       "^<(?P<pri>\\d{1,3})>"
      ]
@@ -237,7 +287,7 @@
     "order": 22,
     "test": {
      "kind": "regex",
-     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*) (?P<app>[^\\s:\\[\\]]+)(?:\\[(?P<pid>\\d+)\\])?:(?: (?P<payload>.*))?$"
+     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*) (?P<app>[^\\s:\\[\\]]+)(?:\\[(?P<pid>\\d+)\\])?:(?: (?P<payload>.*))?$"
     },
     "type": "envelope"
    },
@@ -274,7 +324,7 @@
     "order": 24,
     "test": {
      "kind": "regex",
-     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*) (?P<payload>.*)$"
+     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<host>[A-Za-z0-9][A-Za-z0-9._\\-:]*) (?P<payload>.*)$"
     },
     "type": "envelope"
    },
@@ -291,7 +341,7 @@
     "order": 25,
     "test": {
      "kind": "regex",
-     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \\d]\\d(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<payload>.*)$"
+     "pattern": "^(?:<(?P<pri>\\d{1,3})>)?(?P<timestamp>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\\d{1,2}(?: \\d{4})? \\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?) (?P<payload>.*)$"
     },
     "type": "envelope"
    },
@@ -375,6 +425,26 @@
     "source": "this project"
    },
    "rule_id": "detect:kv_checkpoint"
+  },
+  {
+   "body": {
+    "format": "kv",
+    "name": "kv_js",
+    "order": 46,
+    "test": {
+     "dialect": "kv_js",
+     "kind": "kv",
+     "min_coverage": 0.6,
+     "min_pairs": 4
+    },
+    "type": "format"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:kv_js"
   },
   {
    "body": {
@@ -529,6 +599,19 @@
   },
   {
    "body": {
+    "mode": "pair",
+    "pair_pattern": "(?:^|[{,])\\s*(?P<k>[A-Za-z_]\\w*):'(?P<s>.*?)'(?:\\s*[,}])"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "key:'value' pairs with unquoted keys (JavaScript-style object text)",
+    "source": "this project"
+   },
+   "rule_id": "dialect:kv_js"
+  },
+  {
+   "body": {
     "key_pattern": "(?:^|\\s)(?P<k>[A-Za-z_][\\w.\\-]*)=",
     "mode": "span",
     "strip": " \t"
@@ -649,6 +732,97 @@
     "source": "this project"
    },
    "rule_id": "mask:default"
+  },
+  {
+   "body": {
+    "words": [
+     "accepted",
+     "accept",
+     "allowed",
+     "allow",
+     "permitted",
+     "permit",
+     "granted",
+     "grant",
+     "passed",
+     "pass",
+     "succeeded",
+     "success",
+     "successful",
+     "authenticated",
+     "authorized",
+     "opened",
+     "open",
+     "started",
+     "start",
+     "connected",
+     "connect",
+     "established",
+     "built",
+     "created",
+     "create",
+     "added",
+     "add",
+     "enabled",
+     "enable",
+     "login",
+     "logon",
+     "logged in",
+     "failed",
+     "fail",
+     "failure",
+     "denied",
+     "deny",
+     "blocked",
+     "block",
+     "rejected",
+     "reject",
+     "dropped",
+     "drop",
+     "refused",
+     "refuse",
+     "forbidden",
+     "invalid",
+     "unauthorized",
+     "error",
+     "timeout",
+     "expired",
+     "locked",
+     "closed",
+     "close",
+     "stopped",
+     "stop",
+     "disconnected",
+     "disconnect",
+     "terminated",
+     "teardown",
+     "deleted",
+     "delete",
+     "removed",
+     "remove",
+     "disabled",
+     "disable",
+     "logout",
+     "logoff",
+     "logged out",
+     "detected",
+     "quarantined",
+     "cleaned",
+     "alert",
+     "warning",
+     "critical",
+     "modified",
+     "changed",
+     "updated"
+    ]
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "note": "Outcome and action words: never masked, never merged away, and a field holding one marks the event type",
+    "source": "this project"
+   },
+   "rule_id": "words:protected"
   },
   {
    "body": {

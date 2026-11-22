@@ -60,7 +60,9 @@ SCHEMAS: dict[str, dict] = {
                    "name": {"type": "string", "pattern": "^[a-z0-9_]+$"}, "format": {"type": "string"},
                    "app": STR_LIST, "payload_fallback": {"type": "string"}, "header_patterns": {"type": "object", "additionalProperties": STR_LIST},
                    "test": {"type": "object", "required": ["kind"], "additionalProperties": False, "properties": {
-                       "kind": {"enum": ["regex", "prefix", "json", "xml", "kv", "delimited", "binary", "always"]},
+                       "kind": {"enum": ["regex", "prefix", "json", "xml", "kv", "delimited", "binary", "always",
+                                         "json_wrap"]},
+                       "fields": STR_LIST, "max_keys": {"type": "integer"},
                        "pattern": {"type": "string"}, "value": {"type": "string"}, "dialect": {"type": "string"},
                        "min_pairs": {"type": "integer"}, "min_coverage": {"type": "number"},
                        "delimiter": {"type": "string"}, "min_fields": {"type": "integer"},
@@ -96,6 +98,8 @@ SCHEMAS: dict[str, dict] = {
                 "to": {"type": "string"}, "from": {"oneOf": [{"type": "string"}, STR_LIST]},
                 "value": {}, "transform": TRANSFORMS, "when": WHEN, "join": {"type": "string", "maxLength": 8},
                 "confidence": {"enum": ["high", "medium", "low"]}, "note": {"type": "string"}}}}}},
+    "words": {"type": "object", "required": ["words"], "additionalProperties": False, "properties": {
+        "words": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z_\\- ]*$"}, "maxItems": 400}}},
     "split": {"type": "object", "additionalProperties": False, "properties": {
         "fields": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
         "presence": {"type": "array", "items": {"type": "string"}, "maxItems": 4}}},
@@ -166,7 +170,10 @@ def validate_rule(kind: str, body: Any) -> None:
     if kind == "detect":
         t = body["test"]
         if body["type"] == "envelope":
-            if t["kind"] != "regex" or "payload" not in rx.compile(t["pattern"]).groupindex:
+            if t["kind"] == "json_wrap":
+                if not t.get("fields"):
+                    raise RuleError("json_wrap needs `fields`")
+            elif t["kind"] != "regex" or "payload" not in rx.compile(t["pattern"]).groupindex:
                 raise RuleError("an envelope needs a regex test with a named group `payload`")
         elif "format" not in body:
             raise RuleError("a format check needs `format`")
@@ -341,6 +348,8 @@ class Snapshot:
         self.directives = [r["body"] for r in by_kind.get("directive", [])]
         self.detect = sorted((r["body"] for r in by_kind.get("detect", [])), key=lambda b: (b["order"], b["name"]))
         self.dialects = {r["rule_id"].split(":", 1)[1]: r["body"] for r in by_kind.get("dialect", [])}
+        # outcome and action words that are never masked and never merged away
+        self.protected = frozenset(w for r in by_kind.get("words", []) for w in r["body"]["words"])
         self.masks = sorted(by_kind.get("mask", []), key=lambda r: (-r["body"].get("priority", 0), r["rule_id"]))
         self.signs = sorted(by_kind.get("sign", []), key=lambda r: (-r["body"].get("priority", 0), r["rule_id"]))
         self.seed_parsers = [r for r in by_kind.get("parser", []) if r["body"].get("scope")]

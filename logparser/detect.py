@@ -42,7 +42,8 @@ def _test(test: dict, text: str, snap: Snapshot):
         return text.startswith(test["value"]), None, None
     if kind == "json":
         s = text.strip()
-        return s.startswith("{") and s.endswith("}"), None, None
+        # real JSON objects open with a quoted key (or are empty); `{key:'v'}` is not JSON
+        return s.startswith("{") and s.endswith("}") and s[1:].lstrip()[:1] in ('"', "}"), None, None
     if kind == "xml":
         s = text.lstrip()
         return (len(s) > 2 and s[0] == "<" and (s[1].isalpha() or s[1] in "?!") and s.rstrip().endswith(">")), None, None
@@ -53,6 +54,24 @@ def _test(test: dict, text: str, snap: Snapshot):
         # "-" is the syslog NILVALUE: treat it as absent
         return True, {k: v for k, v in m.groupdict().items()
                       if v is not None and (v != "-" or k == "payload")}, None
+    if kind == "json_wrap":
+        # a small JSON object whose one field holds the real log line (an agent or forwarder wrapper)
+        s = text.strip()
+        if not (s.startswith("{") and s.endswith("}")):
+            return False, None, None
+        try:
+            obj = formats.parse_json(s)
+        except formats.ParseError:
+            return False, None, None
+        if len(obj) > test.get("max_keys", 6):
+            return False, None, None
+        for f in test["fields"]:
+            v = obj.get(f)
+            if isinstance(v, str) and len(v) > 20:
+                caps = {k: str(x) for k, x in obj.items() if k != f and isinstance(x, (str, int, float))}
+                caps["payload"] = v
+                return True, caps, None
+        return False, None, None
     if kind == "kv":
         dialect = snap.dialects.get(test["dialect"])
         if not dialect:
