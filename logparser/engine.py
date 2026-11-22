@@ -35,6 +35,7 @@ class Engine:
     def __init__(self, store: SqliteStore, settings: Settings | None = None, schema: ocsf.Schema | None = None,
                  now: float | None = None):
         self.store = store
+        self.sink = None          # optional event store (e.g. ClickHouse): sink.write(rows), sink.resolved(raw_ids)
         self.settings = settings or Settings()
         self.schema = schema or ocsf.Schema()
         self.now = now                      # fixed clock for tests and replay; None = wall clock
@@ -588,6 +589,20 @@ class Engine:
                 _j(res["errors"][:8]), res["parser_rule"], res["mapping_rule"], _j(res["tags"]),
                 pr["version"] if pr else None, mr["version"] if mr else None)
 
+    def _out(self, rid: int, rec: Record, source: str, g: dict | None, res: dict | None,
+             status: str, reason: str = "") -> dict:
+        """One row for the event store: the parsed event, or the line with the reason it is not parsed yet."""
+        row = {"raw_id": rid, "ingest_id": rec.stream, "message": rec.text, "lp_source": source,
+               "lp_group_id": g["signature"] if g else "", "status": status, "reason": reason}
+        if res is not None and res.get("status") == "parsed":
+            pr = self.snap.rule(res["parser_rule"])
+            mr = self.snap.rule(res["mapping_rule"])
+            row.update({"fields": res["fields"], "event": res["event"], "valid": bool(res["valid"]),
+                        "errors": res["errors"][:8], "parser_rule": res["parser_rule"] or "",
+                        "mapping_rule": res["mapping_rule"] or "",
+                        "parser_version": pr["version"] if pr else 0, "mapping_version": mr["version"] if mr else 0})
+        return row
+
     def _shadow(self, g: dict, det: Detection, sg: signature.Signed, rec: Record, counts: dict) -> None:
         for rid in (g["parser_rule"], g["mapping_rule"]):
             sh = self.snap.shadow.get(rid) if rid else None
@@ -672,6 +687,7 @@ class Engine:
         stats = {"records": len(records), "parsed": 0, "pending": 0, "dlq": 0, "binary": 0,
                  "quarantined": 0, "directive": 0, "new_groups": 0}
         raw_rows, upd_rows, event_rows, dlq_rows, drop_events = [], [], [], [], []
+        out_rows: list = []
         shadow_counts: dict = {}
         next_id = self.store.next_raw_id() if raw_ids is None else 0
         before = len(self.groups)
@@ -704,10 +720,12 @@ class Engine:
             src["lines"] += 1
             self._dirty_sources.add(source)
             if src["quarantined"]:
+                out_rows.append(self._out(rid, rec, source, None, None, "quarantined", "source quarantined"))
                 put(None, "quarantined", source)
                 stats["quarantined"] += 1
                 continue
             if sg.error:
+                out_rows.append(self._out(rid, rec, source, None, None, "dlq", "decode: " + sg.error[:200]))
                 put(sg.signature, "dlq", source)
                 dlq_rows.append((rid, "decode", sg.error[:300], sg.signature, self.batch_no))
                 stats["dlq"] += 1
@@ -721,11 +739,13 @@ class Engine:
                 self._shadow(g, det, sg, rec, shadow_counts)
             masked = sg.template if det.format == "unstructured" else None
             if res["status"] == "pending":
+                out_rows.append(self._out(rid, rec, source, g, None, "pending", "no parser yet for this group"))
                 put(g["signature"], "pending", source)
                 self._sample(g, rid, rec.text, masked)
                 self._stat(g, {f"#{i} {ph}": v for i, (ph, v) in enumerate(sg.variables[:30])})
                 stats["pending"] += 1
             elif res["status"] == "dlq":
+                out_rows.append(self._out(rid, rec, source, g, None, "dlq", f"{res['stage']}: {res['reason']}"[:300]))
                 put(g["signature"], "dlq", source)
                 dlq_rows.append((rid, res["stage"], res["reason"], g["signature"], self.batch_no))
                 g["parse_failures"] += 1
@@ -736,10 +756,15 @@ class Engine:
                 self._sample(g, rid, rec.text, masked, res["fields"], failure=res["valid"] is False)
                 self._stat(g, res["fields"])
                 event_rows.append(self._event_row(rid, g, res))
+                out_rows.append(self._out(rid, rec, source, g, res, "parsed"))
                 if res["valid"] is False:
                     dlq_rows.append((rid, "ocsf", "; ".join(res["errors"][:3])[:300], g["signature"], self.batch_no))
                 stats["parsed"] += 1
         stats["new_groups"] = len(self.groups) - before
+        if self.sink is not None and out_rows:
+            if raw_ids is not None:
+                self.sink.resolved([r["raw_id"] for r in out_rows])
+            self.sink.write(out_rows)         # before the offset is committed: at-least-once into the event store
         self._merge()
         self._after_batch()
         touched = set(self._dirty_groups)
@@ -1073,6 +1098,7 @@ class Engine:
                 continue
             rows = self.store.raw_by_signature(g["signature"])
             event_rows, dlq_rows, upd = [], [], []
+            out_rows: list = []
             g["parse_failures"] = 0
             if restat:
                 g["_stats"] = {}
@@ -1092,6 +1118,7 @@ class Engine:
                 stats["records"] += 1
                 if res["status"] == "parsed":
                     event_rows.append(self._event_row(r["id"], g, res))
+                    out_rows.append(self._out(r["id"], rec, r["source"], g, res, "parsed"))
                     if res["valid"] is False:
                         dlq_rows.append((r["id"], "ocsf", "; ".join(res["errors"][:3])[:300], g["signature"], self.batch_no))
                     stats["parsed"] += 1
@@ -1102,6 +1129,9 @@ class Engine:
                 else:
                     stats["pending"] += 1
                 upd.append((g["signature"], res["status"], r["source"], r["id"]))
+            if self.sink is not None and out_rows:      # lines that were waiting now have an event
+                self.sink.resolved([r["raw_id"] for r in out_rows])
+                self.sink.write(out_rows)
             self.store.begin()
             try:
                 self.store.delete_events([r["id"] for r in rows])

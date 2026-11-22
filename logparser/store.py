@@ -113,7 +113,7 @@ class Store:
 class SqliteStore(Store):
     def __init__(self, path: str):
         self.path = path
-        self.db = sqlite3.connect(path, timeout=60, isolation_level=None)
+        self.db = sqlite3.connect(path, timeout=60, isolation_level=None, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=NORMAL")
