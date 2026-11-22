@@ -5,3 +5,5 @@ __pycache__/
 # downloaded datasets and run databases are large and reproducible
 data/
 work/
+logparser/web/dist/
+ui/node_modules/

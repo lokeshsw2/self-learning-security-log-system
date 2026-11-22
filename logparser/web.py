@@ -317,6 +317,21 @@ def make_handler(app: App):
         def _json(self, obj, code: int = 200) -> None:
             self._send(code, json.dumps(obj, default=str).encode(), "application/json")
 
+        def _static(self, path: str) -> None:
+            """The built React app (ui/ -> logparser/web/dist). Unknown paths get index.html."""
+            root = os.path.join(HERE, "web", "dist")
+            rel = os.path.normpath(path.lstrip("/")) if path not in ("", "/") else "index.html"
+            full = os.path.join(root, rel)
+            if rel.startswith("..") or not os.path.isfile(full):
+                full = os.path.join(root, "index.html")
+            if not os.path.isfile(full):
+                return self._send(503, b"UI not built: run `npm run build` in ui/", "text/plain")
+            ctype = {".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css",
+                     ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png",
+                     ".ico": "image/x-icon"}.get(os.path.splitext(full)[1], "application/octet-stream")
+            with open(full, "rb") as fh:
+                self._send(200, fh.read(), ctype)
+
         def _body(self) -> bytes:
             return self.rfile.read(int(self.headers.get("Content-Length") or 0))
 
@@ -324,9 +339,8 @@ def make_handler(app: App):
             u = urllib.parse.urlparse(self.path)
             p = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
             try:
-                if u.path == "/":
-                    with open(os.path.join(HERE, "web", "index.html"), "rb") as fh:
-                        return self._send(200, fh.read(), "text/html; charset=utf-8")
+                if not u.path.startswith("/api/"):
+                    return self._static(u.path)
                 routes = {
                     "/api/overview": lambda: app.overview(),
                     "/api/events": lambda: app.events(p),
