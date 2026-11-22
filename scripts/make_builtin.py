@@ -73,6 +73,9 @@ check(15, "cisco", "envelope", {"kind": "regex", "pattern":
       r"^(?P<prefix>.*?)%(?P<cisco_facility>[A-Z][A-Z0-9_]{1,20})-(?P<cisco_severity>[0-7])-"
       r"(?P<cisco_mnemonic>[A-Z0-9_]{2,40}): ?(?P<payload>.*)$"},
       app=["cisco_facility", "cisco_mnemonic"], header_patterns={"prefix": HEADER_PREFIX})
+check(19, "syslog5424_event", "envelope", {"kind": "regex", "pattern":
+      r"^<(?P<pri>\d{1,3})>(?P<version>\d{1,2}) (?P<timestamp>\S+) (?P<host>\S+) (?P<app>\S+) (?P<procid>\S+) "
+      r"(?P<msgid>[A-Za-z]\S*) (?P<payload>" + SD + r")(?: (?P<message>.*))?$"}, app=["app", "msgid"])
 check(20, "syslog5424", "envelope", {"kind": "regex", "pattern":
       r"^<(?P<pri>\d{1,3})>(?P<version>\d{1,2}) (?P<timestamp>\S+) (?P<host>\S+) (?P<app>\S+) (?P<procid>\S+) "
       r"(?P<msgid>\S+) (?:-|(?P<sd>" + SD + r")) ?(?P<payload>.*)$"}, app=["app"], payload_fallback="sd")
@@ -88,7 +91,9 @@ check(24, "syslog3164_notag", "envelope", {"kind": "regex", "pattern":
       r"^" + PRI + r"(?P<timestamp>" + TS3164 + r") (?P<host>" + HOST + r") (?P<payload>.*)$"})
 check(25, "syslog_ts_only", "envelope", {"kind": "regex", "pattern":
       r"^" + PRI + r"(?P<timestamp>" + TS3164 + r") (?P<payload>.*)$"})
-check(26, "pri_only", "envelope", {"kind": "regex", "pattern": r"^<(?P<pri>\d{1,3})>(?P<payload>[^\d].*)$"})
+check(26, "pri_tag", "envelope", {"kind": "regex", "pattern":
+      r"^<(?P<pri>\d{1,3})> ?(?P<app>[A-Za-z_][\w\-./]*)(?:\[(?P<pid>\d+)\])?: (?P<payload>.*)$"}, app=["app"])
+check(27, "pri_only", "envelope", {"kind": "regex", "pattern": r"^<(?P<pri>\d{1,3})>(?P<payload>[^\d].*)$"})
 check(30, "ts_level", "envelope", {"kind": "regex", "pattern":
       r"^\[?(?P<timestamp>\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d)?)\]?,? +(?:- )?"
       r"\[?(?P<level>TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|ERR|FATAL|CRITICAL|Info|Warning|Error|Debug)\]?"
@@ -102,7 +107,7 @@ check(46, "kv_js", "format", {"kind": "kv", "dialect": "kv_js", "min_pairs": 4, 
 check(48, "kv_pipe", "format", {"kind": "kv", "dialect": "kv_pipe", "min_pairs": 4, "min_coverage": 0.6},
       format="kv")
 check(50, "kv", "format", {"kind": "kv", "dialect": "kv_eq", "min_pairs": 4, "min_coverage": 0.55}, format="kv")
-check(60, "csv", "format", {"kind": "delimited", "delimiter": ",", "min_fields": 8}, format="delimited")
+check(60, "csv", "format", {"kind": "delimited", "delimiter": ",", "min_fields": 8, "max_first_share": 0.3}, format="delimited")
 check(61, "tsv", "format", {"kind": "delimited", "delimiter": "\t", "min_fields": 5}, format="delimited")
 check(62, "psv", "format", {"kind": "delimited", "delimiter": "|", "min_fields": 6}, format="delimited")
 for d in det:
@@ -131,7 +136,7 @@ add("mask:default", {"scope": {"bucket": "*"}, "priority": 0, "mode": "extend", 
      "placeholder": "<TS>"},
     {"name": "clf_ts", "pattern": r"\d\d/" + MON + r"/\d{4}:\d\d:\d\d:\d\d(?: [+-]\d{4})?", "placeholder": "<TS>"},
     {"name": "date", "pattern": r"\b(?:\d{4}[-/]\d\d?[-/]\d\d?|\d\d?/\d\d?/\d{2,4})\b", "placeholder": "<DATE>"},
-    {"name": "time", "pattern": r"\b\d{1,2}:\d{1,2}:\d{1,2}(?:[.,:]\d+)?\b", "placeholder": "<TIME>"},
+    {"name": "time", "pattern": r"\b\d{1,2}:\d{1,2}:\d{1,2}(?:[.,:]\d+)?(?: ?[AP]M\b)?", "placeholder": "<TIME>"},
     {"name": "uuid", "pattern": rf"\b{HEXD}{{8}}-{HEXD}{{4}}-{HEXD}{{4}}-{HEXD}{{4}}-{HEXD}{{12}}\b",
      "placeholder": "<UUID>"},
     {"name": "mac", "pattern": rf"\b(?:{HEXD}{{2}}[:-]){{5}}{HEXD}{{2}}\b", "placeholder": "<MAC>"},
@@ -142,7 +147,7 @@ add("mask:default", {"scope": {"bucket": "*"}, "priority": 0, "mode": "extend", 
     {"name": "email", "pattern": r"\b[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+\b", "placeholder": "<EMAIL>"},
     {"name": "path", "pattern": r"(?:\b[A-Za-z]:)?(?:[/\\][\w.\-$@+~%]+){2,}[/\\]?", "placeholder": "<PATH>"},
     {"name": "hex0x", "pattern": rf"\b0[xX]{HEXD}+\b", "placeholder": "<HEX>"},
-    {"name": "id", "pattern": r"\b[A-Za-z]+(?:[_\-][A-Za-z]+)*[_\-]-?\d[\w\-]*\b", "placeholder": "<ID>"},
+    {"name": "id", "pattern": r"\b[A-Za-z]+(?:[_\-][A-Za-z]+)*[_\-]-?[0-9a-fA-F]*\d[\w\-]*\b", "placeholder": "<ID>"},
     {"name": "num", "pattern": r"-?\b\d+(?:\.\d+)?\b", "placeholder": "<NUM>"},
     {"name": "hex", "pattern": rf"\b{HEXD}{{8,}}\b", "placeholder": "<HEX>"},
 ]}, "Variables the spec names: timestamps, IPs, numbers, hex, UUIDs, quoted strings; plus MAC, URL, email, paths")

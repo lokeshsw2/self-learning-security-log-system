@@ -243,6 +243,27 @@
   {
    "body": {
     "app": [
+     "app",
+     "msgid"
+    ],
+    "name": "syslog5424_event",
+    "order": 19,
+    "test": {
+     "kind": "regex",
+     "pattern": "^<(?P<pri>\\d{1,3})>(?P<version>\\d{1,2}) (?P<timestamp>\\S+) (?P<host>\\S+) (?P<app>\\S+) (?P<procid>\\S+) (?P<msgid>[A-Za-z]\\S*) (?P<payload>(?:\\[(?:[^\\]\\\\\"]|\\\\.|\"(?:[^\"\\\\]|\\\\.)*\")*\\])+)(?: (?P<message>.*))?$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:syslog5424_event"
+  },
+  {
+   "body": {
+    "app": [
      "app"
     ],
     "name": "syslog5424",
@@ -354,8 +375,28 @@
   },
   {
    "body": {
-    "name": "pri_only",
+    "app": [
+     "app"
+    ],
+    "name": "pri_tag",
     "order": 26,
+    "test": {
+     "kind": "regex",
+     "pattern": "^<(?P<pri>\\d{1,3})> ?(?P<app>[A-Za-z_][\\w\\-./]*)(?:\\[(?P<pid>\\d+)\\])?: (?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "builtin",
+    "license": "project licence",
+    "source": "this project"
+   },
+   "rule_id": "detect:pri_tag"
+  },
+  {
+   "body": {
+    "name": "pri_only",
+    "order": 27,
     "test": {
      "kind": "regex",
      "pattern": "^<(?P<pri>\\d{1,3})>(?P<payload>[^\\d].*)$"
@@ -494,6 +535,7 @@
     "test": {
      "delimiter": ",",
      "kind": "delimited",
+     "max_first_share": 0.3,
      "min_fields": 8
     },
     "type": "format"
@@ -661,7 +703,7 @@
      },
      {
       "name": "time",
-      "pattern": "\\b\\d{1,2}:\\d{1,2}:\\d{1,2}(?:[.,:]\\d+)?\\b",
+      "pattern": "\\b\\d{1,2}:\\d{1,2}:\\d{1,2}(?:[.,:]\\d+)?(?: ?[AP]M\\b)?",
       "placeholder": "<TIME>"
      },
      {
@@ -706,7 +748,7 @@
      },
      {
       "name": "id",
-      "pattern": "\\b[A-Za-z]+(?:[_\\-][A-Za-z]+)*[_\\-]-?\\d[\\w\\-]*\\b",
+      "pattern": "\\b[A-Za-z]+(?:[_\\-][A-Za-z]+)*[_\\-]-?[0-9a-fA-F]*\\d[\\w\\-]*\\b",
       "placeholder": "<ID>"
      },
      {

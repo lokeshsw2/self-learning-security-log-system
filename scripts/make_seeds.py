@@ -394,6 +394,10 @@ def build() -> dict:
                 "^List": 5}}}, confidence="medium", note="verb prefix of the API action"),
         ]}, OCSF_META, "AWS CloudTrail management and data events to API Activity")
 
+    add("generic", "detect:meraki_inner", {
+        "order": 16, "name": "meraki_inner", "type": "envelope", "app": ["app"], "test": {"kind": "regex", "pattern":
+            r"^<(?P<inner_pri>\d{1,3})>1 (?P<timestamp>\d{10}\.\d+) (?P<host>\S+) (?P<app>[a-z][a-z_]+) (?P<payload>.*)$"}},
+        OWN_META, "Cisco Meraki syslog: priority, epoch time, network name, event type")
     # ---------------- generic helpers
     add("generic", "detect:apache_error", {
         "order": 29, "name": "apache_error", "type": "envelope", "test": {"kind": "regex", "pattern":

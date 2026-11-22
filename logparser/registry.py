@@ -66,6 +66,7 @@ SCHEMAS: dict[str, dict] = {
                        "pattern": {"type": "string"}, "value": {"type": "string"}, "dialect": {"type": "string"},
                        "min_pairs": {"type": "integer"}, "min_coverage": {"type": "number"},
                        "delimiter": {"type": "string"}, "min_fields": {"type": "integer"},
+                       "max_first_share": {"type": "number"},
                        "max_nonprintable": {"type": "number"}}}}},
     "dialect": {"type": "object", "required": ["mode"], "additionalProperties": False, "properties": {
         "mode": {"enum": ["pair", "span"]}, "pair_pattern": {"type": "string"}, "key_pattern": {"type": "string"},

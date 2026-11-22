@@ -84,8 +84,10 @@ def _test(test: dict, text: str, snap: Snapshot):
         d = test["delimiter"]
         if text.count(d) + 1 < test.get("min_fields", 5):
             return False, None, None
-        n = len(formats.split_delimited(text, d))
-        return n >= test.get("min_fields", 5), None, d
+        parts = formats.split_delimited(text, d)
+        if "max_first_share" in test and len(parts[0]) > test["max_first_share"] * len(text):
+            return False, None, None      # one long text field with a few commas at the end is not a table
+        return len(parts) >= test.get("min_fields", 5), None, d
     return False, None, None
 
 

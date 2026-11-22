@@ -14,8 +14,9 @@ import json
 import os
 import re
 
-HINT = re.compile(rb" ?# ?(?:[A-Za-z]+Hint=[^\"\\\n]*?)(?=(?:\\n)?\"|\\\"|$)")
-HINT_KV = re.compile(rb"([A-Za-z]+)=([^\s\"\\]+)")
+# from ` # SomethingHint=` to the end of the line, or to the end of the JSON string that holds the line
+HINT = re.compile(rb' ?# ?[A-Za-z]+Hint=.*?(?=","[A-Za-z_]+":|"\}$|$)')
+HINT_KV = re.compile(rb'([A-Za-z]+)=((?:\\".*?\\")|[^\s"\\]+)')
 
 
 def sample(path: str, out: str, labels, n: int) -> tuple[int, int]:

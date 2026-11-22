@@ -3,6 +3,27 @@
  "rules": [
   {
    "body": {
+    "app": [
+     "app"
+    ],
+    "name": "meraki_inner",
+    "order": 16,
+    "test": {
+     "kind": "regex",
+     "pattern": "^<(?P<inner_pri>\\d{1,3})>1 (?P<timestamp>\\d{10}\\.\\d+) (?P<host>\\S+) (?P<app>[a-z][a-z_]+) (?P<payload>.*)$"
+    },
+    "type": "envelope"
+   },
+   "meta": {
+    "created_by": "seed",
+    "license": "project licence",
+    "note": "Cisco Meraki syslog: priority, epoch time, network name, event type",
+    "source": "this project"
+   },
+   "rule_id": "detect:meraki_inner"
+  },
+  {
+   "body": {
     "name": "apache_error",
     "order": 29,
     "test": {
