@@ -120,18 +120,15 @@ def test_harness_detection_role_saves_through_the_gate(tmp_path):
 
 
 def test_scan_leaves_lines_that_later_rules_handle_well(tmp_path):
-    eng = setup(tmp_path)
-    detection.scan(eng)
-    key = eng.store.queue_items(detection.QUEUE)[0]["key"]
-    sig = eng.store.queue_items("longtail")[0]["key"]
-    # a long-tail rule that reads the line's own time handles these lines: nothing to repair
     from logparser import registry
-    registry.save_rule(eng.store, "longtail:" + sig, {"fields": {"timestamp": {"var": 0}}, "summary": "gdm auth failure"},
-                       {"created_by": "test"})
+    eng = setup(tmp_path)
+    assert detection.scan(eng, enqueue=False)["shapes"] == 1          # unread, and not handled: repair
+    # long-tail rules that read each line's own time handle every unread line: nothing to repair
+    sigs = [g["signature"] for g in eng.store.groups("source='-|unstructured|-' AND merged_into IS NULL")]
+    for sig in sigs:
+        registry.save_rule(eng.store, "longtail:" + sig, {"fields": {"timestamp": {"var": 0}}, "summary": "gdm auth"},
+                           {"created_by": "test"})
     eng.reload()
-    eng.replay_signatures([sig])
-    eng.store.queue_done(detection.QUEUE, key)
-    eng.store.x("DELETE FROM queue WHERE name=?", (detection.QUEUE,))
-    handled = eng.store.q("SELECT COUNT(*) n FROM raw WHERE signature=? AND status='parsed'", (sig,))[0]["n"]
-    left = 25 - handled
-    assert detection.scan(eng)["queued"] == (1 if left >= 20 else 0)
+    eng.replay_signatures(sigs)
+    assert eng.store.q("SELECT COUNT(*) n FROM raw WHERE source='-|unstructured|-' AND status='parsed'")[0]["n"] == 25
+    assert detection.scan(eng, enqueue=False)["shapes"] == 0
