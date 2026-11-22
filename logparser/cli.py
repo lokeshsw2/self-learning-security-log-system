@@ -209,7 +209,11 @@ def main(argv=None) -> None:
     p.add_argument("--source")
     p.add_argument("--signature", action="append")
     p.set_defaults(fn=cmd_replay)
-    args = ap.parse_args(argv)
+    argv = list(sys.argv[1:] if argv is None else argv)
+    for i in range(len(argv) - 1):          # source keys start with "-": keep them as values, not options
+        if argv[i] in ("--source", "--signature") and argv[i + 1].startswith("-"):
+            argv[i], argv[i + 1] = f"{argv[i]}={argv[i + 1]}", ""
+    args = ap.parse_args([x for x in argv if x != ""])
     args.fn(args)
 
 
