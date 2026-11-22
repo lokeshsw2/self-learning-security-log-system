@@ -97,6 +97,9 @@ class Tools:
                                                                  "status", "parser_rule", "mapping_rule", "labels")},
                    "template": _clip(g["template"]), "samples": [_clip(r["raw"]) for r in rows]}
             pr = self.e.snap.rule(g["parser_rule"])
+            mr = self.e.snap.rule(g["mapping_rule"])
+            if mr:
+                out["mapping"] = {"rule_id": mr["rule_id"], "version": mr["version"], "body": mr["body"]}
             if pr:
                 out["parser"] = pr["body"]
                 det, _, cols = self.e.analyse(self._rec({"raw": rows[0]["raw"], "source": g["source"]})) if rows else (None, None, None)
