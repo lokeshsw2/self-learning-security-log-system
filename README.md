@@ -8,6 +8,7 @@ changes travel between the machines that run it (this development machine and th
 - Deployment specifics for GRA: [docs/HANDOFF_GRA.md](docs/HANDOFF_GRA.md).
 - Variant A vs Variant B results: [docs/AB_COMPARISON.md](docs/AB_COMPARISON.md).
 - Open items: [docs/BACKLOG.md](docs/BACKLOG.md). Rule language: [docs/RULES.md](docs/RULES.md).
+- Per-machine setup (macOS development machine, Linux GRA machine): [README2.md](README2.md).
 
 ---
 
@@ -172,7 +173,7 @@ deploy/
   kafka/            server.properties for the local test broker
 ui/                 React + shadcn console (Vite); builds into logparser/web/dist
 scripts/            local infrastructure, data tools, verification
-  kafka.sh mysql.sh logstash.sh   start/stop local Kafka (127.0.0.1:19092), MySQL (13306), Logstash
+  kafka.sh clickhouse.sh mysql.sh logstash.sh   start/stop local Kafka (19092), ClickHouse (8123), MySQL (13306), Logstash
   produce.py        push log files into a topic as one mixed stream
   promote_rules.py  copy learned rules from one store to another (e.g. local SQLite -> GRA MySQL)
   ls_verify.py      run a compiled set in a throwaway Logstash and compare with the engine
@@ -340,9 +341,11 @@ cp .env.example .env                    # ANTHROPIC_API_KEY=... (never commit .e
 
 Then, per machine:
 
-- **This machine (development):** `scripts/kafka.sh start`, `scripts/mysql.sh start` (optional),
-  `scripts/logstash.sh start`, service config `deploy/service/local.json`.
-- **GRA:** start from `deploy/service/production.example.json`; MySQL database and user, topics, Logstash
+- **This machine (development, macOS):** `scripts/kafka.sh start`, `scripts/clickhouse.sh start`,
+  `scripts/mysql.sh start` (optional), `scripts/logstash.sh start`, service config `deploy/service/local.json`.
+  Versions, ports and measurements: [README2.md](README2.md#macos-development-machine).
+- **GRA (Linux):** record the machine's setup in [README2.md](README2.md#linux-gra-machine). Start from
+  `deploy/service/production.example.json`; MySQL database and user, topics, Logstash
   location and ClickHouse as in [docs/HANDOFF_GRA.md](docs/HANDOFF_GRA.md). Learning stays off until enabled.
 
 Running:
