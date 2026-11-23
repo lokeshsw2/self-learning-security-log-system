@@ -13,8 +13,12 @@ import time
 
 from . import rx, transforms
 
-DEFAULT_SCHEMA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                              "data", "raw", "ocsf-schema", "schema-1.10.0.json")
+# OCSF 1.10.0 schema export (schema.ocsf.io, Apache-2.0), shipped with the package; LP_OCSF_SCHEMA overrides it
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_SCHEMA = next((p for p in (os.environ.get("LP_OCSF_SCHEMA"),
+                                   os.path.join(_HERE, "data", "ocsf-1.10.0.json"),
+                                   os.path.join(os.path.dirname(_HERE), "data", "raw", "ocsf-schema", "schema-1.10.0.json"))
+                       if p and os.path.exists(p)), os.path.join(_HERE, "data", "ocsf-1.10.0.json"))
 _INDEX = rx.compile(r"^(.*)\[(\d+)\]$")
 _STR_BASE = {"string_t"}
 _INT_BASE = {"integer_t", "long_t"}

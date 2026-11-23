@@ -3,11 +3,14 @@ __pycache__/
 *.pyc
 .pytest_cache/
 # downloaded datasets and run databases are large and reproducible
-data/
-work/
+/data/
+/work/
 logparser/web/dist/
 ui/node_modules/
 *.hprof
 
 # secrets
 .env
+
+# compiler output: written by the service on every deploy
+deploy/logstash/generated/

@@ -1,5 +1,0 @@
-path.data: "/Users/sunny/code/tt/log-analyis-fable-2/deploy/logstash/generated/data"
-path.logs: "/Users/sunny/code/tt/log-analyis-fable-2/deploy/logstash/generated/logs"
-config.reload.automatic: true
-config.reload.interval: 10s
-api.enabled: false

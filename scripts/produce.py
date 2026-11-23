@@ -1,6 +1,6 @@
 """Push log files into a Kafka topic as one mixed stream (no vendor label), for testing the service.
 
-  python scripts/produce.py --topic logs.unparsed --every 50 "/Users/sunny/code/tt/logs data"/*.log
+  python scripts/produce.py --topic logs.unparsed --every 50 "path/to/logs"/*.log
   --every N sends every Nth line of each file; --limit caps lines per file; lines are interleaved.
 """
 import argparse
